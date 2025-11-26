@@ -89,31 +89,54 @@ export class DrawingEntity extends IndexedEntity<Drawing> {
   static seedData = MOCK_DRAWINGS;
   async appendOps(ops: Op[]): Promise<void> {
     if (ops.length === 0) return;
-    // Sort incoming ops by timestamp to ensure deterministic order
-    const sortedOps = ops.sort((a, b) => a.ts - b.ts);
-    await this.mutate(s => {
-      const newElements = applyOpsToElements(sortedOps, s.elements);
-      const allOps = [...(s.ops || []), ...sortedOps];
-      return {
-        ...s,
-        elements: newElements,
-        ops: allOps,
-        opVersion: (s.opVersion || 0) + sortedOps.length,
-        updatedAt: Date.now(),
-      };
-    });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const sortedOps = ops.sort((a, b) => a.ts - b.ts);
+        await this.mutate(s => {
+          const newElements = applyOpsToElements(sortedOps, s.elements);
+          const allOps = [...(s.ops || []), ...sortedOps];
+          return {
+            ...s,
+            elements: newElements,
+            ops: allOps,
+            opVersion: (s.opVersion || 0) + sortedOps.length,
+            updatedAt: Date.now(),
+          };
+        });
+        return; // Success
+      } catch (err: any) {
+        if (err.message.includes('Concurrent') && attempt < 2) {
+          console.warn(`DO contention on appendOps (attempt ${attempt + 1}), retrying...`);
+          await new Promise(r => setTimeout(r, 100 * Math.pow(2, attempt)));
+          continue;
+        }
+        throw err;
+      }
+    }
   }
   async getOpsSince(version: number): Promise<Op[]> {
     const state = await this.getState();
     return (state.ops || []).slice(version);
   }
   async updatePresence(presence: Presence): Promise<void> {
-    await this.mutate(s => {
-      const now = Date.now();
-      const presences = (s.presences || []).filter(p => p.userId !== presence.userId && (now - p.lastSeen < 30000)); // Keep active users
-      presences.push({ ...presence, lastSeen: now });
-      return { ...s, presences };
-    });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.mutate(s => {
+          const now = Date.now();
+          const presences = (s.presences || []).filter(p => p.userId !== presence.userId && (now - p.lastSeen < 30000)); // Keep active users
+          presences.push({ ...presence, lastSeen: now });
+          return { ...s, presences };
+        });
+        return; // Success
+      } catch (err: any) {
+        if (err.message.includes('Concurrent') && attempt < 2) {
+          console.warn(`DO contention on updatePresence (attempt ${attempt + 1}), retrying...`);
+          await new Promise(r => setTimeout(r, 100 * Math.pow(2, attempt)));
+          continue;
+        }
+        throw err;
+      }
+    }
   }
   async getPresences(): Promise<Presence[]> {
     const state = await this.getState();

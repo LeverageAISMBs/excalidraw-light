@@ -133,13 +133,13 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       let response = "I'm not sure how to help with that. Try asking about tools or how to get started!";
       const suggestions = ['Try the Pen tool', 'How do I change colors?', 'What are templates?'];
       if (context.elements.length === 0) {
-        response = "Your canvas is empty! Why not start by drawing a rectangle? You can select it from the toolbar.";
+        response = "Your canvas is empty! Why not start by drawing a rectangle? You can select it from the toolbar in LeverageCanvas.";
       } else if (lowerMessage.includes('color')) {
         response = "You can change the active color by clicking the colored swatch in the toolbar. This will open a color picker.";
       } else if (lowerMessage.includes('export')) {
         response = "To export your drawing, click the 'Export' button in the toolbar. You can choose between SVG for vectors or PNG for images.";
       } else if (lowerMessage.includes('help')) {
-        response = "I can help you with Paperplane! You can ask me about tools like 'pen', 'rectangle', or features like 'exporting' and 'saving'. What would you like to know?";
+        response = "I can help you with LeverageCanvas! You can ask me about tools like 'pen', 'rectangle', or features like 'exporting' and 'saving'. What would you like to know?";
       }
       return ok(c, { response, suggestions });
     } catch (error) {

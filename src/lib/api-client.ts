@@ -4,14 +4,21 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init });
     if (!res.ok) {
       let errorMsg = `Request failed with status ${res.status}`;
+      let errorBody: any = null;
       try {
-        const errorBody = await res.json();
-        if (errorBody.error) {
+        errorBody = await res.json();
+        if (errorBody && typeof errorBody === 'object' && errorBody.error && typeof errorBody.error === 'string' && errorBody.error.trim() !== '') {
           errorMsg = errorBody.error;
+        } else if (res.statusText) {
+          errorMsg = res.statusText;
         }
       } catch (e) {
-        // Not a JSON response
+        // Not a JSON response, or JSON parsing failed. Fallback to status text.
+        if (res.statusText) {
+          errorMsg = res.statusText;
+        }
       }
+      console.error(`API Error Details - Path: ${path}, Status: ${res.status}, Response:`, errorBody || 'No body');
       throw new Error(errorMsg);
     }
     const json = (await res.json()) as ApiResponse<T>;

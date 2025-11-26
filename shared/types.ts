@@ -19,7 +19,7 @@ export interface ChatMessage {
   text: string;
   ts: number; // epoch millis
 }
-// --- Paperplane Drawing Types ---
+// --- LeverageCanvas Drawing Types ---
 export type Tool = 'select' | 'pen' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'text' | 'eraser' | 'hand';
 export type ElementType = 'stroke' | 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'text';
 export interface Point {

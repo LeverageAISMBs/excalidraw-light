@@ -93,7 +93,7 @@ export function HomePage() {
     try {
       const template = templateId ? templates.find(t => t.id === templateId) : null;
       const newDrawingPayload = {
-        title: template ? `${template.title} (Copy)` : 'New Drawing',
+        title: template ? `${template.title} (Copy)` : 'New LeverageCanvas Drawing',
         elements: template ? template.elements : [],
       };
       const newDrawing = await api<Drawing>('/api/drawings', { method: 'POST', body: JSON.stringify(newDrawingPayload) });
@@ -215,7 +215,7 @@ export function HomePage() {
         <header className="p-2 border-b flex items-center justify-between z-10 bg-background">
           <div className="flex items-center gap-2">
             <div className="h-6 w-6 rounded-md bg-gradient-to-br from-orange-500 to-amber-500" />
-            <span className="font-display text-lg">Paperplane</span>
+            <span className="font-display text-lg">LeverageCanvas</span>
           </div>
           <div className="text-sm text-muted-foreground">{drawing.title}</div>
           <Sheet>
@@ -286,7 +286,7 @@ export function HomePage() {
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center bg-muted/50 rounded-lg">
                   <EmptyStateIllustration className="w-64 h-64" />
-                  <h2 className="text-2xl font-semibold mt-4">Welcome to Paperplane</h2>
+                  <h2 className="text-2xl font-semibold mt-4">Welcome to LeverageCanvas</h2>
                   {loadError ? (
                     <>
                       <p className="text-destructive-foreground bg-destructive p-2 rounded-md">{loadError}</p>
@@ -307,7 +307,7 @@ export function HomePage() {
       {currentDrawingId && (
         <Sheet open={chatOpen} onOpenChange={setChatOpen}>
           <SheetContent>
-            <SheetHeader><SheetTitle>Paperplane AI Assistant</SheetTitle></SheetHeader>
+            <SheetHeader><SheetTitle>LeverageCanvas AI Assistant</SheetTitle></SheetHeader>
             <div className="h-full flex flex-col pt-4">
               <ScrollArea className="flex-1 -mx-6 px-6">
                 <div className="space-y-4">

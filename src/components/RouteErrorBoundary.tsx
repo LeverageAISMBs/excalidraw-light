@@ -44,6 +44,19 @@ export function RouteErrorBoundary() {
       <Button onClick={() => window.location.reload()}>Retry Page</Button>
     </div>
   );
+  if (!error) {
+    return (
+      <ErrorFallback
+        title="No Error"
+        message="This page loaded correctly."
+        statusMessage="Route boundary triggered without an error."
+      >
+        <div className={cn("mt-4 flex justify-center")}>
+          <Button onClick={() => window.location.href = '/'}>Go Home</Button>
+        </div>
+      </ErrorFallback>
+    );
+  }
   let isRouteErr = false;
   try {
     isRouteErr = Boolean(error && isRouteErrorResponse(error));
@@ -57,8 +70,9 @@ export function RouteErrorBoundary() {
         message="Sorry, an error occurred while loading this page."
         error={error.data ? { message: JSON.stringify(error.data, null, 2) } : error}
         statusMessage="Navigation error detected"
-        children={retryButton}
-      />
+      >
+        {retryButton}
+      </ErrorFallback>
     );
   }
   return (
@@ -67,7 +81,8 @@ export function RouteErrorBoundary() {
       message="An unexpected error occurred while loading this page."
       error={error}
       statusMessage="Routing error detected"
-      children={retryButton}
-    />
+    >
+      {retryButton}
+    </ErrorFallback>
   );
 }

@@ -119,38 +119,48 @@ export async function exportToPng(svgString: string, width: number, height: numb
 export function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] = []): DrawingElement[] {
   return produce(initialElements, draft => {
     ops.forEach(op => {
-      switch (op.type) {
-        case 'add':
-          if (op.data && !Array.isArray(op.data)) {
-            draft.push(op.data as DrawingElement);
-          }
-          break;
-        case 'update':
-          if (op.elementId && op.data && !Array.isArray(op.data)) {
-            const idx = draft.findIndex(e => e.id === op.elementId);
-            if (idx !== -1) {
-              const elementToUpdate = draft[idx];
-              Object.assign(elementToUpdate, op.data);
-              // This fixes the Immer bug by ensuring `isEditing` is only on TextElements
-              if (elementToUpdate.type !== 'text' && 'isEditing' in elementToUpdate) {
-                delete (elementToUpdate as any).isEditing;
+      try {
+        switch (op.type) {
+          case 'add':
+            if (op.data && !Array.isArray(op.data)) {
+              draft.push(op.data as DrawingElement);
+            }
+            break;
+          case 'update':
+            if (op.elementId && op.data && !Array.isArray(op.data)) {
+              const idx = draft.findIndex(e => e.id === op.elementId);
+              if (idx !== -1) {
+                const elementToUpdate = draft[idx];
+                const updates = op.data as Partial<DrawingElement>;
+                // Directly mutate draft properties instead of using Object.assign
+                for (const key in updates) {
+                  if (Object.prototype.hasOwnProperty.call(updates, key)) {
+                    (elementToUpdate as any)[key] = (updates as any)[key];
+                  }
+                }
+                // This fixes the Immer bug by ensuring `isEditing` is only on TextElements
+                if (elementToUpdate.type !== 'text' && 'isEditing' in elementToUpdate) {
+                  delete (elementToUpdate as any).isEditing;
+                }
               }
             }
-          }
-          break;
-        case 'delete':
-          if (op.elementId) {
-            const delIdx = draft.findIndex(e => e.id === op.elementId);
-            if (delIdx !== -1) {
-              draft.splice(delIdx, 1);
+            break;
+          case 'delete':
+            if (op.elementId) {
+              const delIdx = draft.findIndex(e => e.id === op.elementId);
+              if (delIdx !== -1) {
+                draft.splice(delIdx, 1);
+              }
             }
-          }
-          break;
-        case 'reorder':
-          if (op.data && Array.isArray(op.data)) {
-             return op.data as DrawingElement[];
-          }
-          break;
+            break;
+          case 'reorder':
+            if (op.data && Array.isArray(op.data)) {
+               return op.data as DrawingElement[];
+            }
+            break;
+        }
+      } catch (error) {
+        console.warn('Failed to apply op:', op, error);
       }
     });
   });
