@@ -94,8 +94,8 @@ export function HomePage() {
   }, [currentDrawingId, drawing, setDrawing]);
   useDebounce(() => { handleSave(pendingOps); }, 1500, [pendingOps, handleSave]);
   useInterval(() => {
-    if (!currentDrawingId) return;
     const poll = async () => {
+      if (!currentDrawingId) return;
       try {
         const [remoteOps, remotePresences] = await Promise.all([
           api<Op[]>(`/api/drawings/${currentDrawingId}/ops?since=${drawing.opVersion || 0}`),
@@ -108,7 +108,9 @@ export function HomePage() {
           setTimeout(() => setShowCollabBanner(false), 3000);
         }
         setPresences(remotePresences.filter(p => p.userId !== userId));
-      } catch (error) { console.error("Polling failed", error); }
+      } catch (error) { 
+        console.error("Polling failed:", error); 
+      }
     };
     poll();
   }, 2000);
@@ -120,16 +122,16 @@ export function HomePage() {
   }, [currentDrawingId, setLocalCursor]);
   const handleExport = async (format: 'svg' | 'png', resolution = '1x') => {
     const scale = resolution === '2x' ? 2 : 1;
-    const width = (viewport.current.width || 1000) * scale;
-    const height = (viewport.current.height || 1000) * scale;
-    const svgString = exportToSvg({ ...drawing, elements }, width, height);
+    const exportWidth = (viewport.current.width || 1000) * scale;
+    const exportHeight = (viewport.current.height || 1000) * scale;
+    const svgString = exportToSvg({ ...drawing, elements }, exportWidth, exportHeight);
     const filename = `${drawing.title}.${format}`;
     if (format === 'svg') {
       const blob = new Blob([svgString], { type: 'image/svg+xml' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
     } else {
-      const dataUrl = await exportToPng(svgString, width, height);
+      const dataUrl = await exportToPng(svgString, exportWidth, exportHeight);
       const a = document.createElement('a'); a.href = dataUrl; a.download = filename; a.click();
     }
     toast.success(`Exported as ${format.toUpperCase()}`);

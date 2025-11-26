@@ -2,7 +2,7 @@
  * Minimal real-world demo: One Durable Object instance per entity (User, ChatBoard), with Indexes for listing.
  */
 import { IndexedEntity } from "./core-utils";
-import type { User, Chat, ChatMessage, Drawing, Op, DrawingElement, Presence } from "@shared/types";
+import type { User, Chat, ChatMessage, Drawing, Op, DrawingElement, Presence, StrokeElement, RectangleElement, EllipseElement, LineElement, ArrowElement, TextElement } from "@shared/types";
 import { MOCK_CHAT_MESSAGES, MOCK_CHATS, MOCK_USERS, MOCK_DRAWINGS } from "@shared/mock-data";
 // USER ENTITY: one DO instance per user
 export class UserEntity extends IndexedEntity<User> {
@@ -38,25 +38,42 @@ function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] = []): 
   ops.forEach(op => {
     switch (op.type) {
       case 'add':
-        if (op.data && 'id' in op.data && 'type' in op.data) {
+        if (op.data && typeof op.data === 'object' && 'type' in op.data && 'id' in op.data) {
           const el = op.data as DrawingElement;
-          // Type guard to ensure it's a valid element
-          if (typeof el.id === 'string' && typeof el.type === 'string') {
-            elementsMap.set(el.id, el);
+          // Use discriminated union type guards
+          switch (el.type) {
+            case 'stroke':
+              if ('points' in el) elementsMap.set(el.id, el as StrokeElement);
+              break;
+            case 'rectangle':
+              if ('fillColor' in el) elementsMap.set(el.id, el as RectangleElement);
+              break;
+            case 'ellipse':
+              if ('fillColor' in el) elementsMap.set(el.id, el as EllipseElement);
+              break;
+            case 'line':
+              if ('points' in el) elementsMap.set(el.id, el as LineElement);
+              break;
+            case 'arrow':
+              if ('points' in el) elementsMap.set(el.id, el as ArrowElement);
+              break;
+            case 'text':
+              if ('text' in el) elementsMap.set(el.id, el as TextElement);
+              break;
+            default:
+              console.warn('Invalid element type in op data:', el);
           }
         }
         break;
       case 'update':
-        if (op.elementId && op.data) {
-          const existing = elementsMap.get(op.elementId);
-          if (existing) {
-            const updatedElement = { ...existing, ...op.data };
-            elementsMap.set(op.elementId, updatedElement);
-          }
+        if (op.elementId && op.data && elementsMap.has(op.elementId)) {
+          const existing = elementsMap.get(op.elementId)!;
+          const updatedElement = { ...existing, ...op.data };
+          elementsMap.set(op.elementId, updatedElement);
         }
         break;
       case 'delete':
-        if (op.elementId) {
+        if (op.elementId && elementsMap.has(op.elementId)) {
           elementsMap.delete(op.elementId);
         }
         break;
@@ -81,7 +98,7 @@ export class DrawingEntity extends IndexedEntity<Drawing> {
         ...s,
         elements: newElements,
         ops: allOps,
-        opVersion: s.opVersion + sortedOps.length,
+        opVersion: (s.opVersion || 0) + sortedOps.length,
         updatedAt: Date.now(),
       };
     });

@@ -5,35 +5,34 @@ import { ErrorFallback } from './ErrorFallback';
 export function RouteErrorBoundary() {
   const error = useRouteError();
   useEffect(() => {
-    if (error) {
-      let errorMessage = 'Unknown route error';
-      let errorStack = '';
-      if (isRouteErrorResponse(error)) {
-        errorMessage = `Route Error ${error.status}: ${error.statusText}`;
-        if (error.data) {
-          errorMessage += ` - ${JSON.stringify(error.data)}`;
-        }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-        errorStack = error.stack || '';
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      } else {
-        errorMessage = JSON.stringify(error);
+    if (!error) return;
+    let errorMessage = 'Unknown route error';
+    let errorStack = '';
+    if (isRouteErrorResponse(error)) {
+      errorMessage = `Route Error ${error.status}: ${error.statusText}`;
+      if (error.data) {
+        errorMessage += ` - ${JSON.stringify(error.data)}`;
       }
-      errorReporter.report({
-        message: errorMessage,
-        stack: errorStack,
-        url: window.location.href,
-        timestamp: new Date().toISOString(),
-        source: 'react-router',
-        error: error,
-        level: "error",
-      });
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+      errorStack = error.stack || '';
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else {
+      errorMessage = JSON.stringify(error);
     }
+    errorReporter.report({
+      message: errorMessage,
+      stack: errorStack,
+      url: window.location.href,
+      timestamp: new Date().toISOString(),
+      source: 'react-router',
+      error: error,
+      level: "error",
+    });
   }, [error]);
   // Render error UI using shared ErrorFallback component
-  if (isRouteErrorResponse(error)) {
+  if (error && isRouteErrorResponse(error)) {
     return (
       <ErrorFallback
         title={`${error.status} ${error.statusText}`}
