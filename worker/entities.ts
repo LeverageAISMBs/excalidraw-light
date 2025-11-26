@@ -69,7 +69,7 @@ function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] = []): 
         if (op.elementId && op.data && elementsMap.has(op.elementId)) {
           const existing = elementsMap.get(op.elementId)!;
           const updatedElement = { ...existing, ...op.data };
-          elementsMap.set(op.elementId, updatedElement);
+          elementsMap.set(op.elementId, updatedElement as DrawingElement);
         }
         break;
       case 'delete':

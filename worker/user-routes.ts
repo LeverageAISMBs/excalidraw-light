@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { UserEntity, ChatBoardEntity, DrawingEntity } from "./entities";
 import { ok, bad, notFound, isStr } from './core-utils';
-import type { Drawing, Op, Presence } from "@shared/types";
+import type { Drawing, Op, Presence, DrawingElement, Viewport } from "@shared/types";
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
   app.get('/api/test', (c) => c.json({ success: true, data: { name: 'CF Workers Demo' }}));
   // USERS
@@ -53,11 +53,11 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, page);
   });
   app.post('/api/drawings', async (c) => {
-    const { title } = (await c.req.json<{ title?: string }>()) ?? {};
+    const { title, elements } = (await c.req.json<{ title?: string, elements?: DrawingElement[] }>()) ?? {};
     const newDrawing: Drawing = {
       id: crypto.randomUUID(),
       title: title || 'Untitled Drawing',
-      elements: [],
+      elements: elements || [],
       updatedAt: Date.now(),
       ops: [],
       opVersion: 0,
@@ -118,6 +118,29 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     if (!(await entity.exists())) return notFound(c, 'drawing not found');
     const presences = await entity.getPresences();
     return ok(c, presences);
+  });
+  // MOCK AI CHAT
+  app.post('/api/ai-chat', async (c) => {
+    try {
+      const { message, context } = await c.req.json<{ message: string; context: { elements: DrawingElement[] } }>();
+      if (!message) return bad(c, 'Message is required.');
+      const lowerMessage = message.toLowerCase();
+      let response = "I'm not sure how to help with that. Try asking about tools or how to get started!";
+      const suggestions = ['Try the Pen tool', 'How do I change colors?', 'What are templates?'];
+      if (context.elements.length === 0) {
+        response = "Your canvas is empty! Why not start by drawing a rectangle? You can select it from the toolbar.";
+      } else if (lowerMessage.includes('color')) {
+        response = "You can change the active color by clicking the colored swatch in the toolbar. This will open a color picker.";
+      } else if (lowerMessage.includes('export')) {
+        response = "To export your drawing, click the 'Export' button in the toolbar. You can choose between SVG for vectors or PNG for images.";
+      } else if (lowerMessage.includes('help')) {
+        response = "I can help you with Paperplane! You can ask me about tools like 'pen', 'rectangle', or features like 'exporting' and 'saving'. What would you like to know?";
+      }
+      return ok(c, { response, suggestions });
+    } catch (error) {
+      console.error('AI Chat Error:', error);
+      return bad(c, 'AI processing failed.');
+    }
   });
   // TEMPLATES
   app.get('/api/templates', async (c) => {

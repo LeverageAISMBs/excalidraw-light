@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   MousePointer2,
   Pen,
@@ -70,6 +70,7 @@ export function EditorToolbar({
   templates,
   onLoadTemplate,
 }: EditorToolbarProps) {
+  const [pngResolution, setPngResolution] = useState('1x');
   return (
     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
       <div className="p-2 rounded-lg shadow-lg bg-card border flex items-center gap-1.5 flex-wrap justify-center">
@@ -99,14 +100,20 @@ export function EditorToolbar({
           <Separator orientation="vertical" className="h-8 mx-1" />
           <Tooltip delayDuration={0}><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={onSave}><Save className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Save</TooltipContent></Tooltip>
           <Popover>
-            <PopoverTrigger asChild><Button variant="ghost" size="icon"><Download className="h-4 w-4" /></Button></PopoverTrigger>
+            <PopoverTrigger asChild><Button variant="outline">Export <Download className="ml-2 h-4 w-4" /></Button></PopoverTrigger>
             <PopoverContent className="w-48">
               <div className="grid gap-4">
                 <div className="space-y-2"><h4 className="font-medium leading-none">Export</h4><p className="text-sm text-muted-foreground">Download your drawing.</p></div>
                 <Button variant="outline" onClick={() => onExport('svg')}>Export as SVG</Button>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => onExport('png', '1x')}>PNG</Button>
-                  <Button variant="outline" className="flex-1" onClick={() => onExport('png', '2x')}>PNG (2x)</Button>
+                  <Button variant="outline" className="flex-1" onClick={() => onExport('png', pngResolution)}>Export as PNG</Button>
+                  <Select value={pngResolution} onValueChange={setPngResolution}>
+                    <SelectTrigger className="w-[60px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1x">1x</SelectItem>
+                      <SelectItem value="2x">2x</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </PopoverContent>

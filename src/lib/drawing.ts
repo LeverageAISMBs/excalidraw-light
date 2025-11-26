@@ -1,4 +1,4 @@
-import type { Drawing, DrawingElement, Point, Op, AlignmentGuide } from "@shared/types";
+import type { Drawing, DrawingElement, Point, Op, AlignmentGuide, TextElement } from "@shared/types";
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
 // Basic path simplification using Ramer-Douglas-Peucker algorithm
@@ -126,15 +126,23 @@ export function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] 
         case 'update':
           if (op.elementId && op.data) {
             const idx = draft.findIndex(e => e.id === op.elementId);
-            if (idx >= 0) {
-              Object.assign(draft[idx], op.data);
+            if (idx !== -1) {
+              const elementToUpdate = draft[idx];
+              const updates = op.data;
+              // Create a new object to avoid mutating a frozen one
+              const newElement = { ...elementToUpdate, ...updates };
+              // Type guard for 'isEditing' property
+              if (elementToUpdate.type !== 'text' && 'isEditing' in newElement) {
+                delete (newElement as Partial<TextElement>).isEditing;
+              }
+              draft[idx] = newElement;
             }
           }
           break;
         case 'delete':
           if (op.elementId) {
             const delIdx = draft.findIndex(e => e.id === op.elementId);
-            if (delIdx >= 0) {
+            if (delIdx !== -1) {
               draft.splice(delIdx, 1);
             }
           }
