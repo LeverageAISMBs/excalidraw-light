@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useDebounce, useInterval } from 'react-use';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useDebounce, useInterval, useWindowSize } from 'react-use';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Toaster, toast } from '@/components/ui/sonner';
@@ -9,13 +11,15 @@ import { LayersPanel } from '@/components/inspector/LayersPanel';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { useDraw } from '@/hooks/use-draw';
 import { api } from '@/lib/api-client';
-import type { Drawing, Tool, Presence, Op, Template } from '@shared/types';
+import type { Drawing, Tool, Presence, Op, Template, Viewport } from '@shared/types';
 import { exportToSvg, exportToPng, generateOp } from '@/lib/drawing';
 import { EmptyStateIllustration } from './EditorAssets';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
-const initialDrawing: Drawing = { id: '', title: 'Untitled', elements: [], updatedAt: 0, ops: [], opVersion: 0 };
+import { v4 as uuidv4 } from 'uuid';
+const initialDrawing: Drawing = { id: '', title: 'Untitled', elements: [], updatedAt: 0, ops: [], opVersion: 0, presences: [] };
+const userId = `user-${uuidv4().slice(0, 4)}`;
 export function HomePage() {
   const [activeTool, setActiveTool] = useState<Tool>('pen');
   const [color, setColor] = useState('#f48018');
@@ -26,7 +30,11 @@ export function HomePage() {
   const [presences, setPresences] = useState<Presence[]>([]);
   const [showGrid, setShowGrid] = useState(false);
   const [enableSnapping, setEnableSnapping] = useState(true);
-  const { drawing, elements, setDrawing, undo, redo, canUndo, canRedo, createElement, createStroke, mergeRemoteOps, pendingOps, dispatchOp } = useDraw(initialDrawing);
+  const [showCollabBanner, setShowCollabBanner] = useState(false);
+  const { drawing, elements, setDrawing, undo, redo, canUndo, canRedo, createElement, createStroke, mergeRemoteOps, pendingOps, dispatchOp, setLocalCursor } = useDraw(initialDrawing);
+  const { width, height } = useWindowSize();
+  const viewport = useRef<Viewport>({ x: 0, y: 0, width, height });
+  useEffect(() => { viewport.current = { x: 0, y: 0, width, height }; }, [width, height]);
   const loadDrawing = useCallback(async (id: string) => {
     try {
       const loaded = await api<Drawing>(`/api/drawings/${id}`);
@@ -79,32 +87,41 @@ export function HomePage() {
     if (!currentDrawingId || ops.length === 0) return;
     try {
       await api(`/api/drawings/${currentDrawingId}/ops`, { method: 'POST', body: JSON.stringify(ops) });
-      setDrawing({ ...drawing, opVersion: drawing.opVersion + ops.length });
+      setDrawing({ ...drawing, opVersion: (drawing.opVersion || 0) + ops.length });
     } catch (error) {
       toast.error('Failed to save changes.');
     }
   }, [currentDrawingId, drawing, setDrawing]);
-  useDebounce(() => { handleSave(pendingOps); }, 2000, [pendingOps, handleSave]);
+  useDebounce(() => { handleSave(pendingOps); }, 1500, [pendingOps, handleSave]);
   useInterval(() => {
     if (!currentDrawingId) return;
     const poll = async () => {
       try {
-        const remoteOps = await api<Op[]>(`/api/drawings/${currentDrawingId}/ops?since=${drawing.opVersion}`);
+        const [remoteOps, remotePresences] = await Promise.all([
+          api<Op[]>(`/api/drawings/${currentDrawingId}/ops?since=${drawing.opVersion || 0}`),
+          api<Presence[]>(`/api/drawings/${currentDrawingId}/presence`),
+        ]);
         if (remoteOps.length > 0) {
           mergeRemoteOps(remoteOps);
-          setDrawing({ ...drawing, opVersion: drawing.opVersion + remoteOps.length });
-          toast.info('Drawing updated with changes from others.');
+          setDrawing({ ...drawing, opVersion: (drawing.opVersion || 0) + remoteOps.length });
+          setShowCollabBanner(true);
+          setTimeout(() => setShowCollabBanner(false), 3000);
         }
-        const remotePresences = await api<Presence[]>(`/api/drawings/${currentDrawingId}/presence`);
-        setPresences(remotePresences);
+        setPresences(remotePresences.filter(p => p.userId !== userId));
       } catch (error) { console.error("Polling failed", error); }
     };
     poll();
-  }, 5000);
+  }, 2000);
+  const handleCursorMove = useCallback((cursor: { x: number; y: number; }) => {
+    setLocalCursor(cursor);
+    if (currentDrawingId) {
+      api(`/api/drawings/${currentDrawingId}/presence`, { method: 'POST', body: JSON.stringify({ userId, cursor }) }).catch(console.error);
+    }
+  }, [currentDrawingId, setLocalCursor]);
   const handleExport = async (format: 'svg' | 'png', resolution = '1x') => {
     const scale = resolution === '2x' ? 2 : 1;
-    const width = 1000 * scale;
-    const height = 1000 * scale;
+    const width = (viewport.current.width || 1000) * scale;
+    const height = (viewport.current.height || 1000) * scale;
     const svgString = exportToSvg({ ...drawing, elements }, width, height);
     const filename = `${drawing.title}.${format}`;
     if (format === 'svg') {
@@ -120,6 +137,16 @@ export function HomePage() {
   const handleUpdateElement = (id: string, updates: Partial<Drawing['elements'][0]>) => {
     dispatchOp(generateOp('update', id, updates));
   };
+  useHotkeys('v', () => setActiveTool('select'));
+  useHotkeys('p', () => setActiveTool('pen'));
+  useHotkeys('r', () => setActiveTool('rectangle'));
+  useHotkeys('o', () => setActiveTool('ellipse'));
+  useHotkeys('l', () => setActiveTool('line'));
+  useHotkeys('t', () => setActiveTool('text'));
+  useHotkeys('backspace, delete', () => { /* TODO: Delete selected */ });
+  useHotkeys('mod+z', undo);
+  useHotkeys('mod+shift+z', redo);
+  useHotkeys('mod+s', (e) => { e.preventDefault(); handleSave(pendingOps); });
   return (
     <AppLayout className="h-screen overflow-hidden !p-0">
       <ThemeToggle className="absolute top-4 right-4 z-20" />
@@ -157,28 +184,48 @@ export function HomePage() {
             enableSnapping={enableSnapping} onToggleSnapping={() => setEnableSnapping(!enableSnapping)}
             templates={templates} onLoadTemplate={(id) => createNewDrawing(id)}
           />
-          {currentDrawingId ? (
-            <ResizablePanelGroup direction="horizontal" className="h-full">
-              <ResizablePanel defaultSize={80}>
-                <ExcalidrawCanvas
-                  elements={elements} tool={activeTool} color={color} strokeWidth={strokeWidth}
-                  onCreateElement={createElement} onCreateStroke={createStroke} onUpdateElement={handleUpdateElement}
-                  presences={presences} showGrid={showGrid} enableSnapping={enableSnapping}
-                />
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={20} minSize={15} maxSize={25}>
-                <LayersPanel elements={elements} onReorder={(reordered) => { /* TODO */ }} onToggleVisibility={(id) => { /* TODO */ }} />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-muted/50">
-              <EmptyStateIllustration className="w-64 h-64" />
-              <h2 className="text-2xl font-semibold mt-4">Welcome to Paperplane</h2>
-              <p className="text-muted-foreground">Create a new drawing or select one to get started.</p>
-              <Button onClick={() => createNewDrawing()} className="mt-6">Start Drawing</Button>
+          <AnimatePresence>
+            {showCollabBanner && (
+              <motion.div
+                className="fixed bg-primary text-primary-foreground px-4 py-2 rounded-full top-20 left-1/2 -translate-x-1/2 z-20 shadow-lg"
+                initial={{ y: -100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -100, opacity: 0 }}
+              >
+                Drawing updated with remote changes!
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <div className="absolute bottom-4 left-4 z-10 bg-card/80 backdrop-blur-sm p-2 rounded-lg text-xs text-muted-foreground">
+            {presences.length + 1} user(s) online
+          </div>
+          <div className="max-w-7xl mx-auto h-full">
+            <div className="py-4 md:py-6 lg:py-8 h-full">
+              {currentDrawingId ? (
+                <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg border">
+                  <ResizablePanel defaultSize={80}>
+                    <ExcalidrawCanvas
+                      elements={elements} tool={activeTool} color={color} strokeWidth={strokeWidth}
+                      onCreateElement={createElement} onCreateStroke={createStroke} onUpdateElement={handleUpdateElement}
+                      onCursorMove={handleCursorMove} presences={presences} showGrid={showGrid} enableSnapping={enableSnapping}
+                      viewport={viewport.current}
+                    />
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel defaultSize={20} minSize={15} maxSize={25}>
+                    <LayersPanel elements={elements} onReorder={(reordered) => { /* TODO */ }} onToggleVisibility={(id) => { /* TODO */ }} />
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center bg-muted/50">
+                  <EmptyStateIllustration className="w-64 h-64" />
+                  <h2 className="text-2xl font-semibold mt-4">Welcome to Paperplane</h2>
+                  <p className="text-muted-foreground">Create a new drawing or select one to get started.</p>
+                  <Button onClick={() => createNewDrawing()} className="mt-6">Start Drawing</Button>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </main>
       </div>
       <Toaster richColors closeButton />

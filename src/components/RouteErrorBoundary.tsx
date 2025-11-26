@@ -2,21 +2,12 @@ import { useRouteError, isRouteErrorResponse } from 'react-router-dom';
 import { useEffect } from 'react';
 import { errorReporter } from '@/lib/errorReporter';
 import { ErrorFallback } from './ErrorFallback';
-
 export function RouteErrorBoundary() {
-  let error: unknown;
-  try {
-    error = useRouteError();
-  } catch (e) {
-    console.error('RouteErrorBoundary must only be used in errorElement field of router config, not rendered directly in JSX');
-    error = e;
-  }
-
+  const error = useRouteError();
   useEffect(() => {
     if (error) {
       let errorMessage = 'Unknown route error';
       let errorStack = '';
-
       if (isRouteErrorResponse(error)) {
         errorMessage = `Route Error ${error.status}: ${error.statusText}`;
         if (error.data) {
@@ -30,7 +21,6 @@ export function RouteErrorBoundary() {
       } else {
         errorMessage = JSON.stringify(error);
       }
-
       errorReporter.report({
         message: errorMessage,
         stack: errorStack,
@@ -42,7 +32,6 @@ export function RouteErrorBoundary() {
       });
     }
   }, [error]);
-
   // Render error UI using shared ErrorFallback component
   if (isRouteErrorResponse(error)) {
     return (
@@ -54,7 +43,6 @@ export function RouteErrorBoundary() {
       />
     );
   }
-
   return (
     <ErrorFallback
       title="Unexpected Error"

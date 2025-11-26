@@ -61,6 +61,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       updatedAt: Date.now(),
       ops: [],
       opVersion: 0,
+      presences: [],
     };
     const created = await DrawingEntity.create(c.env, newDrawing);
     return ok(c, created);
@@ -102,15 +103,26 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const ops = await entity.getOpsSince(since);
     return ok(c, ops);
   });
+  app.post('/api/drawings/:id/presence', async (c) => {
+    const id = c.req.param('id');
+    const presenceData = await c.req.json<Presence>();
+    if (!presenceData || !presenceData.userId) return bad(c, 'userId required');
+    const entity = new DrawingEntity(c.env, id);
+    if (!(await entity.exists())) return notFound(c, 'drawing not found');
+    await entity.updatePresence(presenceData);
+    return ok(c, { updated: true });
+  });
   app.get('/api/drawings/:id/presence', async (c) => {
-    // Mock presence for now
-    return ok(c, [{ userId: 'user-2', cursor: { x: Math.random() * 800, y: Math.random() * 600 }, lastSeen: Date.now() }] as Presence[]);
+    const id = c.req.param('id');
+    const entity = new DrawingEntity(c.env, id);
+    if (!(await entity.exists())) return notFound(c, 'drawing not found');
+    const presences = await entity.getPresences();
+    return ok(c, presences);
   });
   // TEMPLATES
   app.get('/api/templates', async (c) => {
     await DrawingEntity.ensureSeed(c.env);
     const { items } = await DrawingEntity.list(c.env);
-    // In a real app, you might have a specific flag for templates. Here we just filter by name.
     const templates = items.filter(d => d.title.toLowerCase().includes('template') || d.id === 'd1');
     return ok(c, templates);
   });

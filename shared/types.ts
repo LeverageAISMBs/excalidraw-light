@@ -69,13 +69,17 @@ export interface TextElement extends BaseElement {
 }
 export type DrawingElement = StrokeElement | RectangleElement | EllipseElement | LineElement | ArrowElement | TextElement;
 // --- Collaboration & History Types ---
-export type Op = {
+export interface Op {
   id: string;
   type: 'add' | 'update' | 'delete';
   elementId?: string;
   data?: Partial<DrawingElement> | DrawingElement;
   ts: number;
 };
+export interface TransformedOp extends Op {
+  originalId?: string;
+  resolvedConflicts?: number;
+}
 export interface Drawing {
   id: string;
   title: string;
@@ -83,10 +87,11 @@ export interface Drawing {
   updatedAt: number;
   ops: Op[];
   opVersion: number;
+  presences?: Presence[];
 }
 export interface Presence {
   userId: string;
-  cursor: Point | null;
+  cursor?: Point | null;
   lastSeen: number;
 }
 export interface AlignmentGuide {
@@ -95,3 +100,9 @@ export interface AlignmentGuide {
   end: Point;
 }
 export type Template = Pick<Drawing, 'id' | 'title' | 'elements'>;
+export interface Viewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}

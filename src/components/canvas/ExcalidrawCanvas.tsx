@@ -1,6 +1,6 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { DrawingElement, Tool, Point, Presence, AlignmentGuide, TextElement } from '@shared/types';
+import type { DrawingElement, Tool, Point, Presence, AlignmentGuide, TextElement, Viewport } from '@shared/types';
 import { getPathData, snapToGrid, getAlignmentGuides } from '@/lib/drawing';
 interface ExcalidrawCanvasProps {
   elements: DrawingElement[];
@@ -10,9 +10,11 @@ interface ExcalidrawCanvasProps {
   onCreateElement: (tool: Tool, start: Point, end: Point, options: { color: string; strokeWidth: number }) => void;
   onCreateStroke: (points: Point[], options: { color: string; strokeWidth: number }) => void;
   onUpdateElement: (id: string, updates: Partial<DrawingElement>) => void;
+  onCursorMove: (point: Point) => void;
   presences?: Presence[];
   showGrid?: boolean;
   enableSnapping?: boolean;
+  viewport: Viewport;
 }
 function renderElement(el: DrawingElement, onUpdateElement: (id: string, updates: Partial<DrawingElement>) => void) {
   const commonProps = {
@@ -54,7 +56,9 @@ function renderElement(el: DrawingElement, onUpdateElement: (id: string, updates
       return null;
   }
 }
-export function ExcalidrawCanvas({ elements, tool, color, strokeWidth, onCreateElement, onCreateStroke, onUpdateElement, presences = [], showGrid = false, enableSnapping = true }: ExcalidrawCanvasProps) {
+const getElementBounds = (el: DrawingElement) => ({ x: el.x, y: el.y, width: el.width, height: el.height });
+const boundsIntersect = (b1: Viewport, b2: Viewport) => !(b2.x > b1.x + b1.width || b2.x + b2.width < b1.x || b2.y > b1.y + b1.height || b2.y + b2.height < b1.y);
+export function ExcalidrawCanvas({ elements, tool, color, strokeWidth, onCreateElement, onCreateStroke, onUpdateElement, onCursorMove, presences = [], showGrid = false, enableSnapping = true, viewport }: ExcalidrawCanvasProps) {
   const targetRef = useRef<SVGSVGElement>(null);
   const [action, setAction] = useState<'none' | 'drawing'>('none');
   const currentPointsRef = useRef<Point[]>([]);
@@ -70,6 +74,9 @@ export function ExcalidrawCanvas({ elements, tool, color, strokeWidth, onCreateE
     const transformed = pt.matrixTransform(svg.getScreenCTM()?.inverse());
     return { x: transformed.x, y: transformed.y };
   }, []);
+  const virtualizedElements = useMemo(() => {
+    return elements.filter(el => boundsIntersect(viewport, getElementBounds(el)));
+  }, [elements, viewport]);
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (tool === 'select' || tool === 'hand') return;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -81,18 +88,17 @@ export function ExcalidrawCanvas({ elements, tool, color, strokeWidth, onCreateE
     }
   };
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const point = getSvgPoint(e);
+    onCursorMove(point);
     if (action !== 'drawing') return;
-    let point = getSvgPoint(e);
-    if (enableSnapping) {
-      point = snapToGrid(point, 20);
-    }
+    let snappedPoint = enableSnapping ? snapToGrid(point, 20) : point;
     if (tool === 'pen') {
-      currentPointsRef.current.push(point);
+      currentPointsRef.current.push(snappedPoint);
       setPreviewElement({ id: 'preview-stroke', type: 'stroke', points: [...currentPointsRef.current], strokeColor: color, strokeWidth } as any);
     } else if (tool === 'rectangle' || tool === 'ellipse' || tool === 'line' || tool === 'arrow' || tool === 'text') {
       const tempPreview = {
-        id: 'preview', type: tool, x: Math.min(startPointRef.current.x, point.x), y: Math.min(startPointRef.current.y, point.y),
-        width: Math.abs(startPointRef.current.x - point.x), height: Math.abs(startPointRef.current.y - point.y), angle: 0,
+        id: 'preview', type: tool, x: Math.min(startPointRef.current.x, snappedPoint.x), y: Math.min(startPointRef.current.y, snappedPoint.y),
+        width: Math.abs(startPointRef.current.x - snappedPoint.x), height: Math.abs(startPointRef.current.y - snappedPoint.y), angle: 0,
         strokeColor: color, strokeWidth, opacity: 1, fillColor: 'transparent', strokeStyle: 'solid',
       } as any;
       setPreviewElement(tempPreview);
@@ -124,14 +130,19 @@ export function ExcalidrawCanvas({ elements, tool, color, strokeWidth, onCreateE
         </pattern>
       )}
       <rect width="100%" height="100%" fill={showGrid ? "url(#grid)" : "transparent"} />
-      {elements.map(el => renderElement(el, onUpdateElement))}
+      {virtualizedElements.map(el => renderElement(el, onUpdateElement))}
       {previewElement && renderElement(previewElement, onUpdateElement)}
       <AnimatePresence>
         {alignmentGuides.map((guide, i) => (
           <motion.line key={i} x1={guide.start.x} y1={guide.start.y} x2={guide.end.x} y2={guide.end.y} stroke="hsl(var(--primary))" strokeWidth="1" strokeDasharray="3 3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
         ))}
       </AnimatePresence>
-      {presences.map(p => p.cursor && ( <circle key={p.userId} cx={p.cursor.x} cy={p.cursor.y} r={4} fill="#f48018" className="pointer-events-none" /> ))}
+      {presences.map(p => p.cursor && (
+        <motion.g key={p.userId} initial={{ x: p.cursor.x, y: p.cursor.y }} animate={{ x: p.cursor.x, y: p.cursor.y }} transition={{ type: 'spring', stiffness: 500, damping: 30 }}>
+          <circle r={6} fill="#f48018" className="pointer-events-none" />
+          <text x="10" y="5" fontSize="10" fill="#f48018">{p.userId}</text>
+        </motion.g>
+      ))}
     </svg>
   );
 }

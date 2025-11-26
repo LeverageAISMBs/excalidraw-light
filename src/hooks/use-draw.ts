@@ -1,13 +1,14 @@
 import { useState, useCallback, useMemo } from 'react';
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
-import type { Drawing, DrawingElement, Tool, Point, Op, TextElement } from '@shared/types';
+import type { Drawing, DrawingElement, Tool, Point, Op } from '@shared/types';
 import { simplifyPoints, smoothPath, applyOpsToElements, generateOp } from '@/lib/drawing';
 const UNDO_LIMIT = 100;
 export function useDraw(initialDrawing: Drawing) {
   const [drawing, setDrawing] = useState<Drawing>(initialDrawing);
   const [opHistory, setOpHistory] = useState<Op[]>(initialDrawing.ops || []);
   const [historyIndex, setHistoryIndex] = useState(initialDrawing.ops?.length || 0);
+  const [localCursor, setLocalCursor] = useState<Point | null>(null);
   const currentElements = useMemo(() => {
     const safeHistory = opHistory || [];
     return applyOpsToElements(safeHistory.slice(0, historyIndex));
@@ -96,11 +97,12 @@ export function useDraw(initialDrawing: Drawing) {
     dispatchOp(generateOp('add', undefined, strokeElement));
   };
   const mergeRemoteOps = useCallback((ops: Op[]) => {
+    if (ops.length === 0) return;
+    // Simple merge: append remote ops. A true OT/CRDT would involve transformation.
     const current = opHistory || [];
     const newHistory = [...current, ...ops];
     setOpHistory(newHistory);
     setHistoryIndex(newHistory.length);
-    return { merged: ops.length, conflicts: 0 };
   }, [opHistory]);
   return {
     drawing,
@@ -114,6 +116,8 @@ export function useDraw(initialDrawing: Drawing) {
     createStroke,
     dispatchOp,
     mergeRemoteOps,
-    pendingOps: opHistory?.slice(drawing.opVersion) || [],
+    pendingOps: (opHistory || []).slice(drawing.opVersion),
+    localCursor,
+    setLocalCursor,
   };
 }
