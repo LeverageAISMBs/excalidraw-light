@@ -65,6 +65,7 @@ export interface TextElement extends BaseElement {
   text: string;
   fontSize: number;
   fontFamily: string;
+  isEditing?: boolean;
 }
 export type DrawingElement = StrokeElement | RectangleElement | EllipseElement | LineElement | ArrowElement | TextElement;
 // --- Collaboration & History Types ---
@@ -88,3 +89,9 @@ export interface Presence {
   cursor: Point | null;
   lastSeen: number;
 }
+export interface AlignmentGuide {
+  type: 'horizontal' | 'vertical';
+  start: Point;
+  end: Point;
+}
+export type Template = Pick<Drawing, 'id' | 'title' | 'elements'>;

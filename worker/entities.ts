@@ -2,7 +2,7 @@
  * Minimal real-world demo: One Durable Object instance per entity (User, ChatBoard), with Indexes for listing.
  */
 import { IndexedEntity } from "./core-utils";
-import type { User, Chat, ChatMessage, Drawing, Op, DrawingElement } from "@shared/types";
+import type { User, Chat, ChatMessage, Drawing, Op, DrawingElement, StrokeElement, RectangleElement, EllipseElement, LineElement, ArrowElement, TextElement } from "@shared/types";
 import { MOCK_CHAT_MESSAGES, MOCK_CHATS, MOCK_USERS, MOCK_DRAWINGS } from "@shared/mock-data";
 // USER ENTITY: one DO instance per user
 export class UserEntity extends IndexedEntity<User> {
@@ -38,15 +38,18 @@ function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] = []): 
   ops.forEach(op => {
     switch (op.type) {
       case 'add':
-        if (op.data) {
-          elementsMap.set((op.data as DrawingElement).id, op.data as DrawingElement);
+        if (op.data && 'id' in op.data && 'type' in op.data) {
+          // Basic validation to ensure it's a valid element structure
+          elementsMap.set(op.data.id as string, op.data as DrawingElement);
         }
         break;
       case 'update':
         if (op.elementId && op.data) {
           const existing = elementsMap.get(op.elementId);
           if (existing) {
-            elementsMap.set(op.elementId, { ...existing, ...op.data });
+            // Create a new object to avoid mutation issues and ensure type correctness
+            const updatedElement = { ...existing, ...op.data };
+            elementsMap.set(op.elementId, updatedElement);
           }
         }
         break;

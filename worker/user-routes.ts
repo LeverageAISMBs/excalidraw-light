@@ -104,7 +104,15 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
   });
   app.get('/api/drawings/:id/presence', async (c) => {
     // Mock presence for now
-    return ok(c, [] as Presence[]);
+    return ok(c, [{ userId: 'user-2', cursor: { x: Math.random() * 800, y: Math.random() * 600 }, lastSeen: Date.now() }] as Presence[]);
+  });
+  // TEMPLATES
+  app.get('/api/templates', async (c) => {
+    await DrawingEntity.ensureSeed(c.env);
+    const { items } = await DrawingEntity.list(c.env);
+    // In a real app, you might have a specific flag for templates. Here we just filter by name.
+    const templates = items.filter(d => d.title.toLowerCase().includes('template') || d.id === 'd1');
+    return ok(c, templates);
   });
   // DELETE: Users
   app.delete('/api/users/:id', async (c) => ok(c, { id: c.req.param('id'), deleted: await UserEntity.delete(c.env, c.req.param('id')) }));

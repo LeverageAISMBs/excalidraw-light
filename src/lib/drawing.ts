@@ -1,4 +1,4 @@
-import type { Drawing, DrawingElement, Point, Op } from "@shared/types";
+import type { Drawing, DrawingElement, Point, Op, AlignmentGuide } from "@shared/types";
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
 // Basic path simplification using Ramer-Douglas-Peucker algorithm
@@ -77,8 +77,6 @@ function elementToSvg(el: DrawingElement): string {
       return `<ellipse cx="${el.width / 2}" cy="${el.height / 2}" rx="${el.width / 2}" ry="${el.height / 2}" fill="${el.fillColor}" ${common} />`;
     case 'line':
     case 'arrow':
-      // Note: line/arrow points are relative to element x/y, but width/height define the bounding box.
-      // This simple implementation might need refinement for rotated lines.
       return `<path d="M 0 0 L ${el.width} ${el.height}" fill="none" ${common} />`;
     case 'text':
       return `<text x="0" y="${el.fontSize}" font-family="${el.fontFamily}" font-size="${el.fontSize}" fill="${el.strokeColor}" ${common}>${el.text}</text>`;
@@ -86,25 +84,25 @@ function elementToSvg(el: DrawingElement): string {
       return '';
   }
 }
-export function exportToSvg(drawing: Drawing): string {
+export function exportToSvg(drawing: Drawing, width: number, height: number): string {
   const elementsSvg = drawing.elements.map(elementToSvg).join('\n  ');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <rect width="100%" height="100%" fill="white" />
   ${elementsSvg}
 </svg>`;
 }
-export async function exportToPng(svgString: string): Promise<string> {
+export async function exportToPng(svgString: string, width: number, height: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject('Canvas context not available');
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, width, height);
       URL.revokeObjectURL(url);
       resolve(canvas.toDataURL('image/png'));
     };
@@ -153,4 +151,43 @@ export function generateOp(type: Op['type'], elementId?: string, data?: Partial<
     data,
     ts: Date.now(),
   };
+}
+// --- Advanced Tools Utilities ---
+export function snapToGrid(p: Point, gridSize: number): Point {
+  return {
+    x: Math.round(p.x / gridSize) * gridSize,
+    y: Math.round(p.y / gridSize) * gridSize,
+  };
+}
+export function getAlignmentGuides(elements: DrawingElement[], preview: DrawingElement): AlignmentGuide[] {
+  const guides: AlignmentGuide[] = [];
+  const threshold = 5;
+  const previewBounds = {
+    left: preview.x,
+    right: preview.x + preview.width,
+    top: preview.y,
+    bottom: preview.y + preview.height,
+    centerX: preview.x + preview.width / 2,
+    centerY: preview.y + preview.height / 2,
+  };
+  for (const el of elements) {
+    if (el.id === preview.id) continue;
+    const elBounds = {
+      left: el.x,
+      right: el.x + el.width,
+      top: el.y,
+      bottom: el.y + el.height,
+      centerX: el.x + el.width / 2,
+      centerY: el.y + el.height / 2,
+    };
+    // Vertical guides
+    if (Math.abs(previewBounds.left - elBounds.left) < threshold) guides.push({ type: 'vertical', start: { x: elBounds.left, y: Math.min(previewBounds.top, elBounds.top) }, end: { x: elBounds.left, y: Math.max(previewBounds.bottom, elBounds.bottom) } });
+    if (Math.abs(previewBounds.right - elBounds.right) < threshold) guides.push({ type: 'vertical', start: { x: elBounds.right, y: Math.min(previewBounds.top, elBounds.top) }, end: { x: elBounds.right, y: Math.max(previewBounds.bottom, elBounds.bottom) } });
+    if (Math.abs(previewBounds.centerX - elBounds.centerX) < threshold) guides.push({ type: 'vertical', start: { x: elBounds.centerX, y: Math.min(previewBounds.top, elBounds.top) }, end: { x: elBounds.centerX, y: Math.max(previewBounds.bottom, elBounds.bottom) } });
+    // Horizontal guides
+    if (Math.abs(previewBounds.top - elBounds.top) < threshold) guides.push({ type: 'horizontal', start: { x: Math.min(previewBounds.left, elBounds.left), y: elBounds.top }, end: { x: Math.max(previewBounds.right, elBounds.right), y: elBounds.top } });
+    if (Math.abs(previewBounds.bottom - elBounds.bottom) < threshold) guides.push({ type: 'horizontal', start: { x: Math.min(previewBounds.left, elBounds.left), y: elBounds.bottom }, end: { x: Math.max(previewBounds.right, elBounds.right), y: elBounds.bottom } });
+    if (Math.abs(previewBounds.centerY - elBounds.centerY) < threshold) guides.push({ type: 'horizontal', start: { x: Math.min(previewBounds.left, elBounds.left), y: elBounds.centerY }, end: { x: Math.max(previewBounds.right, elBounds.right), y: elBounds.centerY } });
+  }
+  return guides;
 }
