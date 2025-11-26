@@ -80,7 +80,8 @@ function runSetupCommands() {
     const commands = [
     "bun add roughjs@^4.0.6",
     "bun add react-colorful@^5.6.1",
-    "bun install @use-gesture/react"
+    "bun install @use-gesture/react",
+    "bun install uuid"
 ];
     
     if (commands.length === 0) {
