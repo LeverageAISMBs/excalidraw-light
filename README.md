@@ -1,5 +1,5 @@
 # LeverageCanvas
-[![Deploy to Cloudflare]([cloudflarebutton])]([cloudflarebutton])
+[![Deploy to Cloudflare]([![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/LeverageAISMBs/excalidraw-light))]([![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/LeverageAISMBs/excalidraw-light))
 LeverageCanvas is an Excalidraw-inspired collaborative sketch canvas built on Cloudflare Workers and Durable Objects. It provides a visually stunning drawing surface with vector shapes, freehand drawing, text support, and real-time collaboration features, all powered by a serverless architecture for seamless persistence and sharing.
 ## Description
 LeverageCanvas offers a polished, intuitive whiteboard experience similar to Excalidraw, focusing on delightful interactions and high performance. Users can create drawings with rectangles, ellipses, lines, arrows, freehand strokes with smoothing, and text elements. It includes selection, transformation (move, scale, rotate), layer management, and a clean toolbar. Collaboration is handled through optimistic local edits with periodic syncing via Cloudflare's Global Durable Objects, ensuring low-latency updates without WebSockets. Drawings are persisted serverlessly and exportable as SVG or PNG.
@@ -98,7 +98,7 @@ Deploy to Cloudflare Workers for production:
    ```
 The deployment includes the frontend assets (via Vite) and the Worker. Access your app at the provided Workers URL.
 For one-click deployment:
-[![Deploy to Cloudflare]([cloudflarebutton])]([cloudflarebutton])
+[![Deploy to Cloudflare]([![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/LeverageAISMBs/excalidraw-light))]([![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/LeverageAISMBs/excalidraw-light))
 ### Environment Configuration
 - No additional env vars needed for basic setup (uses single GlobalDurableObject binding).
 - For custom domains: Use Wrangler to configure routes in `wrangler.jsonc` (do not modify bindings).
