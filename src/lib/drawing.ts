@@ -76,18 +76,19 @@ function elementToSvg(el: DrawingElement): string {
     case 'ellipse':
       return `<ellipse cx="${el.width / 2}" cy="${el.height / 2}" rx="${el.width / 2}" ry="${el.height / 2}" fill="${el.fillColor}" ${common} />`;
     case 'line':
-    case 'arrow':
+    case 'arrow': {
       const pathData = `M ${el.points[0].x} ${el.points[0].y} L ${el.points[1].x} ${el.points[1].y}`;
       return `<path d="${pathData}" fill="none" ${common} />`;
+    }
     case 'text':
       return `<text x="0" y="${el.fontSize}" font-family="${el.fontFamily}" font-size="${el.fontSize}" fill="${el.strokeColor}" ${common}>${el.text}</text>`;
     default:
       return '';
   }
 }
-export function exportToSvg(drawing: Drawing, width: number, height: number): string {
+export function exportToSvg(drawing: Drawing, width: number, height: number, viewport: { x: number, y: number }): string {
   const elementsSvg = drawing.elements.map(elementToSvg).join('\n  ');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewport.x} ${viewport.y} ${width} ${height}">
   <rect width="100%" height="100%" fill="white" />
   ${elementsSvg}
 </svg>`;
@@ -120,16 +121,17 @@ export function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] 
     ops.forEach(op => {
       switch (op.type) {
         case 'add':
-          if (op.data) {
+          if (op.data && !Array.isArray(op.data)) {
             draft.push(op.data as DrawingElement);
           }
           break;
         case 'update':
-          if (op.elementId && op.data) {
+          if (op.elementId && op.data && !Array.isArray(op.data)) {
             const idx = draft.findIndex(e => e.id === op.elementId);
             if (idx !== -1) {
               const elementToUpdate = draft[idx];
               Object.assign(elementToUpdate, op.data);
+              // This fixes the Immer bug by ensuring `isEditing` is only on TextElements
               if (elementToUpdate.type !== 'text' && 'isEditing' in elementToUpdate) {
                 delete (elementToUpdate as Partial<TextElement>).isEditing;
               }
@@ -144,11 +146,16 @@ export function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] 
             }
           }
           break;
+        case 'reorder':
+          if (op.data && Array.isArray(op.data)) {
+             return op.data as DrawingElement[];
+          }
+          break;
       }
     });
   });
 }
-export function generateOp(type: Op['type'], elementId?: string, data?: Partial<DrawingElement> | DrawingElement): Op {
+export function generateOp(type: Op['type'], elementId?: string, data?: Partial<DrawingElement> | DrawingElement | DrawingElement[]): Op {
   return {
     id: uuidv4(),
     type,
@@ -195,4 +202,18 @@ export function getAlignmentGuides(elements: DrawingElement[], preview: DrawingE
     if (Math.abs(previewBounds.centerY - elBounds.centerY) < threshold) guides.push({ type: 'horizontal', start: { x: Math.min(previewBounds.left, elBounds.left), y: elBounds.centerY }, end: { x: Math.max(previewBounds.right, elBounds.right), y: elBounds.centerY } });
   }
   return guides;
+}
+export function pointInElement(point: Point, el: DrawingElement): boolean {
+  // A simple bounding box check for now
+  return (
+    point.x >= el.x &&
+    point.x <= el.x + el.width &&
+    point.y >= el.y &&
+    point.y <= el.y + el.height
+  );
+}
+export function computeRotationDelta(center: Point, start: Point, current: Point): number {
+  const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+  const currentAngle = Math.atan2(current.y - center.y, current.x - center.x);
+  return (currentAngle - startAngle) * (180 / Math.PI); // convert to degrees
 }

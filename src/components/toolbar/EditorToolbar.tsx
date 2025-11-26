@@ -52,6 +52,7 @@ const tools: { value: Tool; label: string; icon: React.ElementType }[] = [
   { value: 'ellipse', label: 'Ellipse', icon: Circle },
   { value: 'line', label: 'Line', icon: Minus },
   { value: 'text', label: 'Text', icon: Type },
+  { value: 'eraser', label: 'Eraser', icon: Eraser },
 ];
 export function EditorToolbar({
   activeTool,
@@ -80,7 +81,7 @@ export function EditorToolbar({
             {tools.map(({ value, label, icon: Icon }) => (
               <Tooltip key={value} delayDuration={0}>
                 <TooltipTrigger asChild>
-                  <ToggleGroupItem value={value} aria-label={label}>
+                  <ToggleGroupItem value={value} aria-label={label} className="min-w-[44px]">
                     <Icon className="h-4 w-4" />
                   </ToggleGroupItem>
                 </TooltipTrigger>

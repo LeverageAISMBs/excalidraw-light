@@ -37,6 +37,7 @@ export interface BaseElement {
   strokeColor: string;
   strokeWidth: number;
   opacity: number;
+  zIndex?: number;
 }
 export interface StrokeElement extends BaseElement {
   type: 'stroke';
@@ -71,11 +72,12 @@ export type DrawingElement = StrokeElement | RectangleElement | EllipseElement |
 // --- Collaboration & History Types ---
 export interface Op {
   id: string;
-  type: 'add' | 'update' | 'delete';
+  type: 'add' | 'update' | 'delete' | 'reorder';
   elementId?: string;
-  data?: Partial<DrawingElement> | DrawingElement;
+  data?: Partial<DrawingElement> | DrawingElement | DrawingElement[];
   ts: number;
 };
+export type RotationDelta = number;
 export interface TransformedOp extends Op {
   originalId?: string;
   resolvedConflicts?: number;

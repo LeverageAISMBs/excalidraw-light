@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { errorReporter } from '@/lib/errorReporter';
 import { ErrorFallback } from './ErrorFallback';
 import { Button } from './ui/button';
+import { cn } from '@/lib/utils';
 export function RouteErrorBoundary() {
   const error = useRouteError();
   useEffect(() => {
@@ -33,7 +34,7 @@ export function RouteErrorBoundary() {
     });
   }, [error]);
   const retryButton = (
-    <div className="mt-4">
+    <div className={cn("mt-4 flex justify-center")}>
       <Button onClick={() => window.location.reload()}>Retry Page</Button>
     </div>
   );

@@ -11,7 +11,7 @@ import { LayersPanel } from '@/components/inspector/LayersPanel';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { useDraw } from '@/hooks/use-draw';
 import { api } from '@/lib/api-client';
-import type { Drawing, Tool, Presence, Op, Template, Viewport, Point } from '@shared/types';
+import type { Drawing, Tool, Presence, Op, Template, Viewport, Point, DrawingElement } from '@shared/types';
 import { exportToSvg, exportToPng, generateOp } from '@/lib/drawing';
 import { EmptyStateIllustration } from './EditorAssets';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { v4 as uuidv4 } from 'uuid';
 import { MessageCircle, Send, Download } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 const initialDrawing: Drawing = { id: '', title: 'Untitled', elements: [], updatedAt: 0, ops: [], opVersion: 0, presences: [] };
 const userId = `user-${uuidv4().slice(0, 4)}`;
 interface ChatMessage { role: 'user' | 'ai'; text: string; }
@@ -42,6 +43,7 @@ export function HomePage() {
   const [viewportOffset, setViewportOffset] = useState<Point>({ x: 0, y: 0 });
   const { drawing, elements, setDrawing, undo, redo, canUndo, canRedo, createElement, createStroke, mergeRemoteOps, pendingOps, dispatchOp, setLocalCursor, selectedIds, onSelect, onDeselectAll, onDragMove, onResize } = useDraw(initialDrawing);
   const { width, height } = useWindowSize();
+  const isMobile = useIsMobile();
   const viewport = useRef<Viewport>({ x: viewportOffset.x, y: viewportOffset.y, width, height });
   useEffect(() => { viewport.current = { x: viewportOffset.x, y: viewportOffset.y, width, height }; }, [width, height, viewportOffset]);
   const loadDrawing = useCallback(async (id: string) => {
@@ -132,7 +134,7 @@ export function HomePage() {
     };
     poll();
   }, 2000);
-  const handleCursorMove = useCallback((cursor: { x: number; y: number; }) => {
+  const handleCursorMove = useCallback((cursor: Point) => {
     setLocalCursor(cursor);
     if (currentDrawingId) {
       api(`/api/drawings/${currentDrawingId}/presence`, { method: 'POST', body: JSON.stringify({ userId, cursor }) }).catch(console.error);
@@ -143,7 +145,7 @@ export function HomePage() {
       const scale = resolution === '2x' ? 2 : 1;
       const exportWidth = (viewport.current.width || 1000) * scale;
       const exportHeight = (viewport.current.height || 1000) * scale;
-      const svgString = exportToSvg(drawingToExport, exportWidth, exportHeight);
+      const svgString = exportToSvg(drawingToExport, exportWidth, exportHeight, viewportOffset);
       const filename = `${drawingToExport.title}.${format}`;
       if (format === 'svg') {
         const blob = new Blob([svgString], { type: 'image/svg+xml' });
@@ -158,8 +160,11 @@ export function HomePage() {
       toast.error('Export failed.');
     }
   };
-  const handleUpdateElement = (id: string, updates: Partial<Drawing['elements'][0]>) => {
+  const handleUpdateElement = (id: string, updates: Partial<DrawingElement>) => {
     dispatchOp(generateOp('update', id, updates));
+  };
+  const handleDeleteElement = (id: string) => {
+    dispatchOp(generateOp('delete', id));
   };
   const handleSendChatMessage = async () => {
     if (!chatInput.trim() || isChatLoading) return;
@@ -182,6 +187,15 @@ export function HomePage() {
   const onPan = useCallback((delta: Point) => {
     setViewportOffset(prev => ({ x: prev.x + delta.x, y: prev.y + delta.y }));
   }, []);
+  const onRotate = useCallback((deltaAngle: number, id: string) => {
+    const el = elements.find(e => e.id === id);
+    if (el) {
+      dispatchOp(generateOp('update', id, { angle: el.angle + deltaAngle }));
+    }
+  }, [elements, dispatchOp]);
+  const onReorder = useCallback((reorderedElements: DrawingElement[]) => {
+    dispatchOp(generateOp('reorder', undefined, reorderedElements));
+  }, [dispatchOp]);
   useHotkeys('v', () => setActiveTool('select'));
   useHotkeys('p', () => setActiveTool('pen'));
   useHotkeys('r', () => setActiveTool('rectangle'));
@@ -189,7 +203,8 @@ export function HomePage() {
   useHotkeys('l', () => setActiveTool('line'));
   useHotkeys('t', () => setActiveTool('text'));
   useHotkeys('h', () => setActiveTool('hand'));
-  useHotkeys('backspace, delete', () => { selectedIds.forEach(id => dispatchOp(generateOp('delete', id))); });
+  useHotkeys('e', () => setActiveTool('eraser'));
+  useHotkeys('backspace, delete', () => { selectedIds.forEach(id => dispatchOp(generateOp('delete', id))); onDeselectAll(); });
   useHotkeys('mod+z', undo);
   useHotkeys('mod+shift+z', redo);
   useHotkeys('mod+s', (e) => { e.preventDefault(); handleSave(pendingOps); });
@@ -257,14 +272,15 @@ export function HomePage() {
                     <ExcalidrawCanvas
                       elements={elements} tool={activeTool} color={color} strokeWidth={strokeWidth}
                       onCreateElement={createElement} onCreateStroke={createStroke} onUpdateElement={handleUpdateElement}
+                      onDeleteElement={handleDeleteElement}
                       onCursorMove={handleCursorMove} presences={presences} showGrid={showGrid} enableSnapping={enableSnapping}
                       viewport={viewport.current} selectedIds={selectedIds} onSelect={onSelect} onDeselectAll={onDeselectAll}
-                      onDragMove={onDragMove} onResize={onResize} onPan={onPan}
+                      onDragMove={onDragMove} onResize={onResize} onRotate={onRotate} onPan={onPan} isMobile={isMobile}
                     />
                   </ResizablePanel>
                   <ResizableHandle withHandle />
                   <ResizablePanel defaultSize={20} minSize={15} maxSize={25}>
-                    <LayersPanel elements={elements} onReorder={(reordered) => { /* TODO */ }} onToggleVisibility={(id) => { /* TODO */ }} />
+                    <LayersPanel elements={elements} onDispatchOp={dispatchOp} onReorder={onReorder} />
                   </ResizablePanel>
                 </ResizablePanelGroup>
               ) : (
