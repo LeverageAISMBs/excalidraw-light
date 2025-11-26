@@ -77,7 +77,10 @@ function updateWranglerJsonc() {
 }
 
 function runSetupCommands() {
-    const commands = [];
+    const commands = [
+    "bun add roughjs@^4.0.6",
+    "bun add react-colorful@^5.6.1"
+];
     
     if (commands.length === 0) {
         console.log('⊘ No setup commands to run');
