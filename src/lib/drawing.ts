@@ -1,6 +1,4 @@
-import type { Drawing, DrawingElement, Point, Op, AlignmentGuide, TextElement } from "@shared/types";
-import { produce } from 'immer';
-import { v4 as uuidv4 } from 'uuid';
+import type { Drawing, DrawingElement, Point } from "@shared/types";
 // Basic path simplification using Ramer-Douglas-Peucker algorithm
 function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): number {
   const { x: x1, y: y1 } = lineStart;
@@ -67,44 +65,42 @@ export function getPathData(points: Point[]): string {
 }
 // SVG Export helpers
 function elementToSvg(el: DrawingElement): string {
-  const common = `stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" opacity="${el.opacity}" transform="translate(${el.x} ${el.y}) rotate(${el.angle} ${el.width / 2} ${el.height / 2})"`;
+  const common = `stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" opacity="${el.opacity}" transform="rotate(${el.angle} ${el.x + el.width / 2} ${el.y + el.height / 2})"`;
   switch (el.type) {
     case 'stroke':
       return `<path d="${getPathData(el.points)}" fill="none" ${common} />`;
     case 'rectangle':
-      return `<rect width="${el.width}" height="${el.height}" fill="${el.fillColor}" ${common} />`;
+      return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="${el.fillColor}" ${common} />`;
     case 'ellipse':
-      return `<ellipse cx="${el.width / 2}" cy="${el.height / 2}" rx="${el.width / 2}" ry="${el.height / 2}" fill="${el.fillColor}" ${common} />`;
+      return `<ellipse cx="${el.x + el.width / 2}" cy="${el.y + el.height / 2}" rx="${el.width / 2}" ry="${el.height / 2}" fill="${el.fillColor}" ${common} />`;
     case 'line':
-    case 'arrow': {
-      const pathData = `M ${el.points[0].x} ${el.points[0].y} L ${el.points[1].x} ${el.points[1].y}`;
-      return `<path d="${pathData}" fill="none" ${common} />`;
-    }
+    case 'arrow':
+      return `<path d="M ${el.x} ${el.y} L ${el.x + el.width} ${el.y + el.height}" fill="none" ${common} />`;
     case 'text':
-      return `<text x="0" y="${el.fontSize}" font-family="${el.fontFamily}" font-size="${el.fontSize}" fill="${el.strokeColor}" ${common}>${el.text}</text>`;
+      return `<text x="${el.x}" y="${el.y + el.fontSize}" font-family="${el.fontFamily}" font-size="${el.fontSize}" fill="${el.strokeColor}" ${common}>${el.text}</text>`;
     default:
       return '';
   }
 }
-export function exportToSvg(drawing: Drawing, width: number, height: number, viewport: { x: number, y: number }): string {
+export function exportToSvg(drawing: Drawing): string {
   const elementsSvg = drawing.elements.map(elementToSvg).join('\n  ');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewport.x} ${viewport.y} ${width} ${height}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000">
   <rect width="100%" height="100%" fill="white" />
   ${elementsSvg}
 </svg>`;
 }
-export async function exportToPng(svgString: string, width: number, height: number): Promise<string> {
+export async function exportToPng(svgString: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
+      canvas.width = img.width;
+      canvas.height = img.height;
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject('Canvas context not available');
-      ctx.drawImage(img, 0, 0, width, height);
+      ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
       resolve(canvas.toDataURL('image/png'));
     };
@@ -114,118 +110,4 @@ export async function exportToPng(svgString: string, width: number, height: numb
     };
     img.src = url;
   });
-}
-// --- Operation Log Utilities ---
-export function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] = []): DrawingElement[] {
-  return produce(initialElements, draft => {
-    ops.forEach(op => {
-      try {
-        switch (op.type) {
-          case 'add':
-            if (op.data && !Array.isArray(op.data)) {
-              draft.push(op.data as DrawingElement);
-            }
-            break;
-          case 'update':
-            if (op.elementId && op.data && !Array.isArray(op.data)) {
-              const idx = draft.findIndex(e => e.id === op.elementId);
-              if (idx !== -1) {
-                const elementToUpdate = draft[idx];
-                const updates = op.data as Partial<DrawingElement>;
-                // Directly mutate draft properties instead of using Object.assign
-                for (const key in updates) {
-                  if (Object.prototype.hasOwnProperty.call(updates, key)) {
-                    (elementToUpdate as any)[key] = (updates as any)[key];
-                  }
-                }
-                // This fixes the Immer bug by ensuring `isEditing` is only on TextElements
-                if (elementToUpdate.type !== 'text' && 'isEditing' in elementToUpdate) {
-                  delete (elementToUpdate as any).isEditing;
-                }
-              }
-            }
-            break;
-          case 'delete':
-            if (op.elementId) {
-              const delIdx = draft.findIndex(e => e.id === op.elementId);
-              if (delIdx !== -1) {
-                draft.splice(delIdx, 1);
-              }
-            }
-            break;
-          case 'reorder':
-            if (op.data && Array.isArray(op.data)) {
-               return op.data as DrawingElement[];
-            }
-            break;
-        }
-      } catch (error) {
-        console.warn('Failed to apply op:', op, error);
-      }
-    });
-  });
-}
-export function generateOp(type: Op['type'], elementId?: string, data?: Partial<DrawingElement> | DrawingElement | DrawingElement[]): Op {
-  return {
-    id: uuidv4(),
-    type,
-    elementId,
-    data,
-    ts: Date.now(),
-  };
-}
-// --- Advanced Tools Utilities ---
-export function snapToGrid(p: Point, gridSize: number): Point {
-  return {
-    x: Math.round(p.x / gridSize) * gridSize,
-    y: Math.round(p.y / gridSize) * gridSize,
-  };
-}
-export function getAlignmentGuides(elements: DrawingElement[], preview: DrawingElement): AlignmentGuide[] {
-  const guides: AlignmentGuide[] = [];
-  const threshold = 5;
-  const previewBounds = {
-    left: preview.x,
-    right: preview.x + preview.width,
-    top: preview.y,
-    bottom: preview.y + preview.height,
-    centerX: preview.x + preview.width / 2,
-    centerY: preview.y + preview.height / 2,
-  };
-  for (const el of elements) {
-    if (el.id === preview.id) continue;
-    const elBounds = {
-      left: el.x,
-      right: el.x + el.width,
-      top: el.y,
-      bottom: el.y + el.height,
-      centerX: el.x + el.width / 2,
-      centerY: el.y + el.height / 2,
-    };
-    // Vertical guides
-    if (Math.abs(previewBounds.left - elBounds.left) < threshold) guides.push({ type: 'vertical', start: { x: elBounds.left, y: Math.min(previewBounds.top, elBounds.top) }, end: { x: elBounds.left, y: Math.max(previewBounds.bottom, elBounds.bottom) } });
-    if (Math.abs(previewBounds.right - elBounds.right) < threshold) guides.push({ type: 'vertical', start: { x: elBounds.right, y: Math.min(previewBounds.top, elBounds.top) }, end: { x: elBounds.right, y: Math.max(previewBounds.bottom, elBounds.bottom) } });
-    if (Math.abs(previewBounds.centerX - elBounds.centerX) < threshold) guides.push({ type: 'vertical', start: { x: elBounds.centerX, y: Math.min(previewBounds.top, elBounds.top) }, end: { x: elBounds.centerX, y: Math.max(previewBounds.bottom, elBounds.bottom) } });
-    // Horizontal guides
-    if (Math.abs(previewBounds.top - elBounds.top) < threshold) guides.push({ type: 'horizontal', start: { x: Math.min(previewBounds.left, elBounds.left), y: elBounds.top }, end: { x: Math.max(previewBounds.right, elBounds.right), y: elBounds.top } });
-    if (Math.abs(previewBounds.bottom - elBounds.bottom) < threshold) guides.push({ type: 'horizontal', start: { x: Math.min(previewBounds.left, elBounds.left), y: elBounds.bottom }, end: { x: Math.max(previewBounds.right, elBounds.right), y: elBounds.bottom } });
-    if (Math.abs(previewBounds.centerY - elBounds.centerY) < threshold) guides.push({ type: 'horizontal', start: { x: Math.min(previewBounds.left, elBounds.left), y: elBounds.centerY }, end: { x: Math.max(previewBounds.right, elBounds.right), y: elBounds.centerY } });
-  }
-  return guides;
-}
-export function pointInElement(point: Point, el: DrawingElement): boolean {
-  // Guard against undefined/null inputs (e.g., during eraser throttling)
-  if (!point || !el) return false;
-  // A simple bounding box check for now
-  return (
-    point.x >= el.x &&
-    point.x <= el.x + el.width &&
-    point.y >= el.y &&
-    point.y <= el.y + el.height
-  );
-}
-export function computeRotationDelta(center: Point, start: Point, current: Point): number {
-  const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
-  const currentAngle = Math.atan2(current.y - center.y, current.x - center.x);
-  return (currentAngle - startAngle) * (180 / Math.PI); // convert to degrees
 }
