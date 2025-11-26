@@ -77,7 +77,8 @@ function elementToSvg(el: DrawingElement): string {
       return `<ellipse cx="${el.width / 2}" cy="${el.height / 2}" rx="${el.width / 2}" ry="${el.height / 2}" fill="${el.fillColor}" ${common} />`;
     case 'line':
     case 'arrow':
-      return `<path d="M 0 0 L ${el.width} ${el.height}" fill="none" ${common} />`;
+      const pathData = `M ${el.points[0].x} ${el.points[0].y} L ${el.points[1].x} ${el.points[1].y}`;
+      return `<path d="${pathData}" fill="none" ${common} />`;
     case 'text':
       return `<text x="0" y="${el.fontSize}" font-family="${el.fontFamily}" font-size="${el.fontSize}" fill="${el.strokeColor}" ${common}>${el.text}</text>`;
     default:
@@ -128,14 +129,10 @@ export function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] 
             const idx = draft.findIndex(e => e.id === op.elementId);
             if (idx !== -1) {
               const elementToUpdate = draft[idx];
-              const updates = op.data;
-              // Create a new object to avoid mutating a frozen one
-              const newElement = { ...elementToUpdate, ...updates };
-              // Type guard for 'isEditing' property
-              if (elementToUpdate.type !== 'text' && 'isEditing' in newElement) {
-                delete (newElement as Partial<TextElement>).isEditing;
+              Object.assign(elementToUpdate, op.data);
+              if (elementToUpdate.type !== 'text' && 'isEditing' in elementToUpdate) {
+                delete (elementToUpdate as Partial<TextElement>).isEditing;
               }
-              draft[idx] = newElement;
             }
           }
           break;

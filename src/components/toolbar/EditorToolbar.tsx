@@ -46,6 +46,7 @@ interface EditorToolbarProps {
 }
 const tools: { value: Tool; label: string; icon: React.ElementType }[] = [
   { value: 'select', label: 'Select', icon: MousePointer2 },
+  { value: 'hand', label: 'Pan', icon: Hand },
   { value: 'pen', label: 'Pen', icon: Pen },
   { value: 'rectangle', label: 'Rectangle', icon: Square },
   { value: 'ellipse', label: 'Ellipse', icon: Circle },

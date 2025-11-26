@@ -11,7 +11,7 @@ import { LayersPanel } from '@/components/inspector/LayersPanel';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { useDraw } from '@/hooks/use-draw';
 import { api } from '@/lib/api-client';
-import type { Drawing, Tool, Presence, Op, Template, Viewport } from '@shared/types';
+import type { Drawing, Tool, Presence, Op, Template, Viewport, Point } from '@shared/types';
 import { exportToSvg, exportToPng, generateOp } from '@/lib/drawing';
 import { EmptyStateIllustration } from './EditorAssets';
 import { Button } from '@/components/ui/button';
@@ -39,16 +39,18 @@ export function HomePage() {
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const { drawing, elements, setDrawing, undo, redo, canUndo, canRedo, createElement, createStroke, mergeRemoteOps, pendingOps, dispatchOp, setLocalCursor } = useDraw(initialDrawing);
+  const [viewportOffset, setViewportOffset] = useState<Point>({ x: 0, y: 0 });
+  const { drawing, elements, setDrawing, undo, redo, canUndo, canRedo, createElement, createStroke, mergeRemoteOps, pendingOps, dispatchOp, setLocalCursor, selectedIds, onSelect, onDeselectAll, onDragMove, onResize } = useDraw(initialDrawing);
   const { width, height } = useWindowSize();
-  const viewport = useRef<Viewport>({ x: 0, y: 0, width, height });
-  useEffect(() => { viewport.current = { x: 0, y: 0, width, height }; }, [width, height]);
+  const viewport = useRef<Viewport>({ x: viewportOffset.x, y: viewportOffset.y, width, height });
+  useEffect(() => { viewport.current = { x: viewportOffset.x, y: viewportOffset.y, width, height }; }, [width, height, viewportOffset]);
   const loadDrawing = useCallback(async (id: string) => {
     try {
       setLoadError(null);
       const loaded = await api<Drawing>(`/api/drawings/${id}`);
       setDrawing(loaded);
       setCurrentDrawingId(id);
+      setViewportOffset({ x: 0, y: 0 });
       toast.success(`Loaded "${loaded.title}"`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load drawing.';
@@ -177,13 +179,17 @@ export function HomePage() {
       setIsChatLoading(false);
     }
   };
+  const onPan = useCallback((delta: Point) => {
+    setViewportOffset(prev => ({ x: prev.x + delta.x, y: prev.y + delta.y }));
+  }, []);
   useHotkeys('v', () => setActiveTool('select'));
   useHotkeys('p', () => setActiveTool('pen'));
   useHotkeys('r', () => setActiveTool('rectangle'));
   useHotkeys('o', () => setActiveTool('ellipse'));
   useHotkeys('l', () => setActiveTool('line'));
   useHotkeys('t', () => setActiveTool('text'));
-  useHotkeys('backspace, delete', () => { /* TODO: Delete selected */ });
+  useHotkeys('h', () => setActiveTool('hand'));
+  useHotkeys('backspace, delete', () => { selectedIds.forEach(id => dispatchOp(generateOp('delete', id))); });
   useHotkeys('mod+z', undo);
   useHotkeys('mod+shift+z', redo);
   useHotkeys('mod+s', (e) => { e.preventDefault(); handleSave(pendingOps); });
@@ -252,7 +258,8 @@ export function HomePage() {
                       elements={elements} tool={activeTool} color={color} strokeWidth={strokeWidth}
                       onCreateElement={createElement} onCreateStroke={createStroke} onUpdateElement={handleUpdateElement}
                       onCursorMove={handleCursorMove} presences={presences} showGrid={showGrid} enableSnapping={enableSnapping}
-                      viewport={viewport.current}
+                      viewport={viewport.current} selectedIds={selectedIds} onSelect={onSelect} onDeselectAll={onDeselectAll}
+                      onDragMove={onDragMove} onResize={onResize} onPan={onPan}
                     />
                   </ResizablePanel>
                   <ResizableHandle withHandle />
