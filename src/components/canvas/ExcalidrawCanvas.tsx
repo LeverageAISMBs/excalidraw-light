@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { DrawingElement, Tool, Point, Presence, AlignmentGuide, TextElement, Viewport } from '@shared/types';
 import { getPathData, snapToGrid, getAlignmentGuides, pointInElement, computeRotationDelta } from '@/lib/drawing';
-import { useThrottle } from 'react-use';
+
 interface ExcalidrawCanvasProps {
   elements: DrawingElement[];
   tool: Tool;
@@ -54,7 +54,7 @@ function renderElement(el: DrawingElement, onUpdateElement: (id: string, updates
       return <g key={el.id} {...commonProps}><rect width={el.width} height={el.height} stroke={el.strokeColor} strokeWidth={el.strokeWidth} fill={el.fillColor} />{selectionRect}</g>;
     case 'ellipse':
       return <g key={el.id} {...commonProps}><ellipse cx={el.width / 2} cy={el.height / 2} rx={el.width / 2} ry={el.height / 2} stroke={el.strokeColor} strokeWidth={el.strokeWidth} fill={el.fillColor} />{selectionRect}</g>;
-    case 'text':
+    case 'text': {
       const textEl = el as TextElement;
       if (textEl.isEditing) {
         return (
@@ -69,6 +69,7 @@ function renderElement(el: DrawingElement, onUpdateElement: (id: string, updates
         );
       }
       return <g key={el.id} {...commonProps}><text x="0" y={textEl.fontSize} fontFamily={textEl.fontFamily} fontSize={textEl.fontSize} fill={textEl.strokeColor}>{textEl.text}</text>{selectionRect}</g>;
+    }
     default: return null;
   }
 }
@@ -119,13 +120,18 @@ export function ExcalidrawCanvas({ elements, tool, color, strokeWidth, onCreateE
       if (tool === 'pen') currentPointsRef.current = [point];
     }
   };
-  const throttledEraser = useThrottle((point: Point) => {
+  const lastEraseRef = useRef<number>(0);
+  const throttledEraser = useCallback((point: Point) => {
+    if (!point) return;
+    const now = Date.now();
+    if (now - lastEraseRef.current < 100) return;
+    lastEraseRef.current = now;
     elements.forEach(el => {
       if (pointInElement(point, el)) {
         onDeleteElement(el.id);
       }
     });
-  }, 100);
+  }, [elements, onDeleteElement]);
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const point = getSvgPoint(e);
     const delta = { x: point.x - lastPointRef.current.x, y: point.y - lastPointRef.current.y };

@@ -10,7 +10,13 @@ export function RouteErrorBoundary() {
     if (!error) return;
     let errorMessage = 'Unknown route error';
     let errorStack = '';
-    if (isRouteErrorResponse(error)) {
+    let isRouteErr = false;
+    try {
+      isRouteErr = isRouteErrorResponse(error);
+    } catch {
+      isRouteErr = false;
+    }
+    if (isRouteErr) {
       errorMessage = `Route Error ${error.status}: ${error.statusText}`;
       if (error.data) {
         errorMessage += ` - ${JSON.stringify(error.data)}`;
@@ -38,7 +44,13 @@ export function RouteErrorBoundary() {
       <Button onClick={() => window.location.reload()}>Retry Page</Button>
     </div>
   );
-  if (error && isRouteErrorResponse(error)) {
+  let isRouteErr = false;
+  try {
+    isRouteErr = Boolean(error && isRouteErrorResponse(error));
+  } catch {
+    isRouteErr = false;
+  }
+  if (isRouteErr) {
     return (
       <ErrorFallback
         title={`${error.status} ${error.statusText}`}

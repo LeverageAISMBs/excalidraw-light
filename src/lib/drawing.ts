@@ -133,7 +133,7 @@ export function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] 
               Object.assign(elementToUpdate, op.data);
               // This fixes the Immer bug by ensuring `isEditing` is only on TextElements
               if (elementToUpdate.type !== 'text' && 'isEditing' in elementToUpdate) {
-                delete (elementToUpdate as Partial<TextElement>).isEditing;
+                delete (elementToUpdate as any).isEditing;
               }
             }
           }
@@ -204,6 +204,8 @@ export function getAlignmentGuides(elements: DrawingElement[], preview: DrawingE
   return guides;
 }
 export function pointInElement(point: Point, el: DrawingElement): boolean {
+  // Guard against undefined/null inputs (e.g., during eraser throttling)
+  if (!point || !el) return false;
   // A simple bounding box check for now
   return (
     point.x >= el.x &&

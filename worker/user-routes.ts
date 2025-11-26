@@ -48,8 +48,13 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
   });
   // DRAWINGS
   app.get('/api/drawings', async (c) => {
-    await DrawingEntity.ensureSeed(c.env);
-    const page = await DrawingEntity.list(c.env);
+    try {
+      await DrawingEntity.ensureSeed(c.env);
+    } catch (err) {
+      console.error('Drawing seed error:', err);
+    }
+    const raw = await DrawingEntity.list(c.env);
+    const page = Array.isArray(raw) ? { items: raw } : (raw ?? { items: [] });
     return ok(c, page);
   });
   app.post('/api/drawings', async (c) => {
@@ -144,9 +149,14 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
   });
   // TEMPLATES
   app.get('/api/templates', async (c) => {
-    await DrawingEntity.ensureSeed(c.env);
-    const { items } = await DrawingEntity.list(c.env);
-    const templates = items.filter(d => d.title.toLowerCase().includes('template') || d.id === 'd1');
+    try {
+      await DrawingEntity.ensureSeed(c.env);
+    } catch (err) {
+      console.error('Drawing seed error:', err);
+    }
+    const raw = await DrawingEntity.list(c.env);
+    const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
+    const templates = items.filter(d => (d?.title ?? '').toLowerCase().includes('template') || d?.id === 'd1');
     return ok(c, templates);
   });
   // DELETE: Users
