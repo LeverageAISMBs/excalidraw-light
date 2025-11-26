@@ -1,45 +1,41 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
-import type { Drawing, DrawingElement, Tool, Point } from '@shared/types';
-import { simplifyPoints, smoothPath } from '@/lib/drawing';
-const UNDO_LIMIT = 50;
+import type { Drawing, DrawingElement, Tool, Point, Op } from '@shared/types';
+import { simplifyPoints, smoothPath, applyOpsToElements, generateOp } from '@/lib/drawing';
+const UNDO_LIMIT = 100;
 export function useDraw(initialDrawing: Drawing) {
   const [drawing, setDrawing] = useState<Drawing>(initialDrawing);
-  const [history, setHistory] = useState<DrawingElement[][]>([initialDrawing.elements]);
+  const [opHistory, setOpHistory] = useState<Op[]>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
-  const updateDrawing = useCallback((updater: (draft: Drawing) => void, addToHistory = true) => {
-    const nextDrawing = produce(drawing, updater);
-    setDrawing(nextDrawing);
-    if (addToHistory) {
-      const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push(nextDrawing.elements);
-      if (newHistory.length > UNDO_LIMIT) {
-        newHistory.shift();
-      }
-      setHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
+  const currentElements = useMemo(() => {
+    return applyOpsToElements(opHistory.slice(0, historyIndex));
+  }, [opHistory, historyIndex]);
+  const setDrawingAndOps = useCallback((newDrawing: Drawing) => {
+    setDrawing(newDrawing);
+    setOpHistory(newDrawing.ops);
+    setHistoryIndex(newDrawing.ops.length);
+  }, []);
+  const dispatchOp = useCallback((op: Op) => {
+    const newHistory = opHistory.slice(0, historyIndex);
+    newHistory.push(op);
+    if (newHistory.length > UNDO_LIMIT) {
+      newHistory.shift();
     }
-  }, [drawing, history, historyIndex]);
+    setOpHistory(newHistory);
+    setHistoryIndex(newHistory.length);
+  }, [opHistory, historyIndex]);
   const undo = useCallback(() => {
     if (historyIndex > 0) {
-      const newIndex = historyIndex - 1;
-      setHistoryIndex(newIndex);
-      updateDrawing(draft => {
-        draft.elements = history[newIndex];
-      }, false);
+      setHistoryIndex(prev => prev - 1);
     }
-  }, [history, historyIndex, updateDrawing]);
+  }, [historyIndex]);
   const redo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      const newIndex = historyIndex + 1;
-      setHistoryIndex(newIndex);
-      updateDrawing(draft => {
-        draft.elements = history[newIndex];
-      }, false);
+    if (historyIndex < opHistory.length) {
+      setHistoryIndex(prev => prev + 1);
     }
-  }, [history, historyIndex, updateDrawing]);
-  const createElement = (tool: Tool, start: Point, end: Point, options: { color: string; strokeWidth: number }): DrawingElement | null => {
+  }, [historyIndex, opHistory.length]);
+  const createElement = (tool: Tool, start: Point, end: Point, options: { color: string; strokeWidth: number }): void => {
     const base = {
       id: uuidv4(),
       x: Math.min(start.x, end.x),
@@ -51,27 +47,33 @@ export function useDraw(initialDrawing: Drawing) {
       strokeWidth: options.strokeWidth,
       opacity: 1,
     };
+    let element: DrawingElement | null = null;
     switch (tool) {
       case 'rectangle':
-        return { ...base, type: 'rectangle', fillColor: 'transparent', strokeStyle: 'solid' };
+        element = { ...base, type: 'rectangle', fillColor: 'transparent', strokeStyle: 'solid' };
+        break;
       case 'ellipse':
-        return { ...base, type: 'ellipse', fillColor: 'transparent', strokeStyle: 'solid' };
+        element = { ...base, type: 'ellipse', fillColor: 'transparent', strokeStyle: 'solid' };
+        break;
       case 'line':
-        return { ...base, type: 'line', points: [start, end] };
+        element = { ...base, type: 'line', points: [start, end] };
+        break;
       case 'arrow':
-        return { ...base, type: 'arrow', points: [start, end] };
-      default:
-        return null;
+        element = { ...base, type: 'arrow', points: [start, end] };
+        break;
+    }
+    if (element) {
+      dispatchOp(generateOp('add', undefined, element));
     }
   };
-  const createStroke = (points: Point[], options: { color: string; strokeWidth: number }): DrawingElement => {
+  const createStroke = (points: Point[], options: { color: string; strokeWidth: number }): void => {
     const simplified = simplifyPoints(points, 1);
     const smoothed = smoothPath(simplified);
     const xs = smoothed.map(p => p.x);
     const ys = smoothed.map(p => p.y);
     const minX = Math.min(...xs);
     const minY = Math.min(...ys);
-    return {
+    const strokeElement: DrawingElement = {
       id: uuidv4(),
       type: 'stroke',
       x: minX,
@@ -84,16 +86,28 @@ export function useDraw(initialDrawing: Drawing) {
       opacity: 1,
       points: smoothed.map(p => ({ x: p.x - minX, y: p.y - minY })),
     };
+    dispatchOp(generateOp('add', undefined, strokeElement));
   };
+  const mergeRemoteOps = useCallback((ops: Op[]) => {
+    // Simple merge: just append and re-render.
+    // Conflict detection can be added here based on timestamps if needed.
+    const newHistory = [...opHistory, ...ops];
+    setOpHistory(newHistory);
+    setHistoryIndex(newHistory.length);
+    return { merged: ops.length, conflicts: 0 };
+  }, [opHistory]);
   return {
     drawing,
-    setDrawing,
-    updateDrawing,
+    elements: currentElements,
+    setDrawing: setDrawingAndOps,
     undo,
     redo,
     canUndo: historyIndex > 0,
-    canRedo: historyIndex < history.length - 1,
+    canRedo: historyIndex < opHistory.length,
     createElement,
     createStroke,
+    dispatchOp,
+    mergeRemoteOps,
+    pendingOps: opHistory.slice(drawing.opVersion),
   };
 }

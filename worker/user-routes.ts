@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { UserEntity, ChatBoardEntity, DrawingEntity } from "./entities";
 import { ok, bad, notFound, isStr } from './core-utils';
-import type { Drawing } from "@shared/types";
+import type { Drawing, Op, Presence } from "@shared/types";
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
   app.get('/api/test', (c) => c.json({ success: true, data: { name: 'CF Workers Demo' }}));
   // USERS
@@ -59,6 +59,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       title: title || 'Untitled Drawing',
       elements: [],
       updatedAt: Date.now(),
+      ops: [],
+      opVersion: 0,
     };
     const created = await DrawingEntity.create(c.env, newDrawing);
     return ok(c, created);
@@ -81,6 +83,28 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const id = c.req.param('id');
     const deleted = await DrawingEntity.delete(c.env, id);
     return ok(c, { id, deleted });
+  });
+  // DRAWING OPERATIONS & COLLABORATION
+  app.post('/api/drawings/:id/ops', async (c) => {
+    const id = c.req.param('id');
+    const ops = await c.req.json<Op[]>();
+    if (!Array.isArray(ops)) return bad(c, 'ops array required');
+    const entity = new DrawingEntity(c.env, id);
+    if (!(await entity.exists())) return notFound(c, 'drawing not found');
+    await entity.appendOps(ops);
+    return ok(c, { appended: ops.length });
+  });
+  app.get('/api/drawings/:id/ops', async (c) => {
+    const id = c.req.param('id');
+    const since = Number(c.req.query('since')) || 0;
+    const entity = new DrawingEntity(c.env, id);
+    if (!(await entity.exists())) return notFound(c, 'drawing not found');
+    const ops = await entity.getOpsSince(since);
+    return ok(c, ops);
+  });
+  app.get('/api/drawings/:id/presence', async (c) => {
+    // Mock presence for now
+    return ok(c, [] as Presence[]);
   });
   // DELETE: Users
   app.delete('/api/users/:id', async (c) => ok(c, { id: c.req.param('id'), deleted: await UserEntity.delete(c.env, c.req.param('id')) }));

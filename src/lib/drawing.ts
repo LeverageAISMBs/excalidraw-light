@@ -1,4 +1,6 @@
-import type { Drawing, DrawingElement, Point } from "@shared/types";
+import type { Drawing, DrawingElement, Point, Op } from "@shared/types";
+import { produce } from 'immer';
+import { v4 as uuidv4 } from 'uuid';
 // Basic path simplification using Ramer-Douglas-Peucker algorithm
 function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): number {
   const { x: x1, y: y1 } = lineStart;
@@ -65,19 +67,21 @@ export function getPathData(points: Point[]): string {
 }
 // SVG Export helpers
 function elementToSvg(el: DrawingElement): string {
-  const common = `stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" opacity="${el.opacity}" transform="rotate(${el.angle} ${el.x + el.width / 2} ${el.y + el.height / 2})"`;
+  const common = `stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" opacity="${el.opacity}" transform="translate(${el.x} ${el.y}) rotate(${el.angle} ${el.width / 2} ${el.height / 2})"`;
   switch (el.type) {
     case 'stroke':
       return `<path d="${getPathData(el.points)}" fill="none" ${common} />`;
     case 'rectangle':
-      return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="${el.fillColor}" ${common} />`;
+      return `<rect width="${el.width}" height="${el.height}" fill="${el.fillColor}" ${common} />`;
     case 'ellipse':
-      return `<ellipse cx="${el.x + el.width / 2}" cy="${el.y + el.height / 2}" rx="${el.width / 2}" ry="${el.height / 2}" fill="${el.fillColor}" ${common} />`;
+      return `<ellipse cx="${el.width / 2}" cy="${el.height / 2}" rx="${el.width / 2}" ry="${el.height / 2}" fill="${el.fillColor}" ${common} />`;
     case 'line':
     case 'arrow':
-      return `<path d="M ${el.x} ${el.y} L ${el.x + el.width} ${el.y + el.height}" fill="none" ${common} />`;
+      // Note: line/arrow points are relative to element x/y, but width/height define the bounding box.
+      // This simple implementation might need refinement for rotated lines.
+      return `<path d="M 0 0 L ${el.width} ${el.height}" fill="none" ${common} />`;
     case 'text':
-      return `<text x="${el.x}" y="${el.y + el.fontSize}" font-family="${el.fontFamily}" font-size="${el.fontSize}" fill="${el.strokeColor}" ${common}>${el.text}</text>`;
+      return `<text x="0" y="${el.fontSize}" font-family="${el.fontFamily}" font-size="${el.fontSize}" fill="${el.strokeColor}" ${common}>${el.text}</text>`;
     default:
       return '';
   }
@@ -110,4 +114,43 @@ export async function exportToPng(svgString: string): Promise<string> {
     };
     img.src = url;
   });
+}
+// --- Operation Log Utilities ---
+export function applyOpsToElements(ops: Op[], initialElements: DrawingElement[] = []): DrawingElement[] {
+  return produce(initialElements, draft => {
+    ops.forEach(op => {
+      switch (op.type) {
+        case 'add':
+          if (op.data) {
+            draft.push(op.data as DrawingElement);
+          }
+          break;
+        case 'update':
+          if (op.elementId && op.data) {
+            const idx = draft.findIndex(e => e.id === op.elementId);
+            if (idx >= 0) {
+              Object.assign(draft[idx], op.data);
+            }
+          }
+          break;
+        case 'delete':
+          if (op.elementId) {
+            const delIdx = draft.findIndex(e => e.id === op.elementId);
+            if (delIdx >= 0) {
+              draft.splice(delIdx, 1);
+            }
+          }
+          break;
+      }
+    });
+  });
+}
+export function generateOp(type: Op['type'], elementId?: string, data?: Partial<DrawingElement> | DrawingElement): Op {
+  return {
+    id: uuidv4(),
+    type,
+    elementId,
+    data,
+    ts: Date.now(),
+  };
 }

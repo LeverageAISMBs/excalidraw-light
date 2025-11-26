@@ -67,9 +67,24 @@ export interface TextElement extends BaseElement {
   fontFamily: string;
 }
 export type DrawingElement = StrokeElement | RectangleElement | EllipseElement | LineElement | ArrowElement | TextElement;
+// --- Collaboration & History Types ---
+export type Op = {
+  id: string;
+  type: 'add' | 'update' | 'delete';
+  elementId?: string;
+  data?: Partial<DrawingElement> | DrawingElement;
+  ts: number;
+};
 export interface Drawing {
   id: string;
   title: string;
   elements: DrawingElement[];
   updatedAt: number;
+  ops: Op[];
+  opVersion: number;
+}
+export interface Presence {
+  userId: string;
+  cursor: Point | null;
+  lastSeen: number;
 }

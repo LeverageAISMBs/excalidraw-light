@@ -1,18 +1,18 @@
-import React, { useRef, useState, useLayoutEffect } from 'react';
-import { useGesture } from '@use-gesture/react';
-import type { Drawing, DrawingElement, Tool, Point } from '@shared/types';
+import React, { useRef, useState, useCallback } from 'react';
+import type { DrawingElement, Tool, Point, Presence } from '@shared/types';
 import { getPathData } from '@/lib/drawing';
 interface ExcalidrawCanvasProps {
-  drawing: Drawing;
+  elements: DrawingElement[];
   tool: Tool;
   color: string;
   strokeWidth: number;
-  onUpdateElement: (element: DrawingElement) => void;
-  onCreateElement: (element: DrawingElement) => void;
+  onCreateElement: (tool: Tool, start: Point, end: Point, options: { color: string; strokeWidth: number }) => void;
+  onCreateStroke: (points: Point[], options: { color: string; strokeWidth: number }) => void;
+  presences?: Presence[];
 }
 function renderElement(el: DrawingElement) {
   const commonProps = {
-    transform: `translate(${el.x}, ${el.y}) rotate(${el.angle})`,
+    transform: `translate(${el.x}, ${el.y}) rotate(${el.angle} ${el.width / 2} ${el.height / 2})`,
     opacity: el.opacity,
   };
   switch (el.type) {
@@ -59,75 +59,88 @@ function renderElement(el: DrawingElement) {
       return null;
   }
 }
-export function ExcalidrawCanvas({ drawing, tool, color, strokeWidth, onCreateElement }: ExcalidrawCanvasProps) {
+export function ExcalidrawCanvas({ elements, tool, color, strokeWidth, onCreateElement, onCreateStroke, presences = [] }: ExcalidrawCanvasProps) {
   const targetRef = useRef<SVGSVGElement>(null);
   const [action, setAction] = useState<'none' | 'drawing'>('none');
-  const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
-  const [startPoint, setStartPoint] = useState<Point>({ x: 0, y: 0 });
+  const currentPointsRef = useRef<Point[]>([]);
+  const startPointRef = useRef<Point>({ x: 0, y: 0 });
   const [previewElement, setPreviewElement] = useState<DrawingElement | null>(null);
-  useGesture(
-    {
-      onDragStart: ({ xy: [x, y] }) => {
-        setAction('drawing');
-        setStartPoint({ x, y });
-        if (tool === 'pen') {
-          setCurrentPoints([{ x, y }]);
-        }
-      },
-      onDrag: ({ xy: [x, y], movement: [mx, my] }) => {
-        if (action !== 'drawing') return;
-        if (tool === 'pen') {
-          setCurrentPoints(prev => [...prev, { x, y }]);
-        } else if (tool === 'rectangle' || tool === 'ellipse') {
-          setPreviewElement({
-            id: 'preview',
-            type: tool,
-            x: Math.min(startPoint.x, x),
-            y: Math.min(startPoint.y, y),
-            width: Math.abs(mx),
-            height: Math.abs(my),
-            angle: 0,
-            strokeColor: color,
-            strokeWidth,
-            opacity: 1,
-            fillColor: 'transparent',
-            strokeStyle: 'solid',
-          });
-        }
-      },
-      onDragEnd: ({ xy: [x, y] }) => {
-        setAction('none');
-        if (tool === 'pen' && currentPoints.length > 1) {
-          onCreateElement({
-            id: 'temp', // will be replaced by hook
-            type: 'stroke',
-            points: currentPoints,
-            strokeColor: color,
-            strokeWidth,
-          } as any);
-        } else if ((tool === 'rectangle' || tool === 'ellipse') && previewElement) {
-          onCreateElement(previewElement);
-        }
-        setCurrentPoints([]);
-        setPreviewElement(null);
-      },
-    },
-    { target: targetRef, eventOptions: { passive: false } }
-  );
+  const getSvgPoint = useCallback((e: React.PointerEvent<SVGSVGElement>): Point => {
+    if (!targetRef.current) return { x: 0, y: 0 };
+    const svg = targetRef.current;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const transformed = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+    return { x: transformed.x, y: transformed.y };
+  }, []);
+  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (tool === 'select' || tool === 'hand') return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setAction('drawing');
+    const point = getSvgPoint(e);
+    startPointRef.current = point;
+    if (tool === 'pen') {
+      currentPointsRef.current = [point];
+    }
+  };
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (action !== 'drawing') return;
+    const point = getSvgPoint(e);
+    if (tool === 'pen') {
+      currentPointsRef.current.push(point);
+      // For performance, we can throttle the preview path update with requestAnimationFrame
+      // but for simplicity, we'll re-render on each move for now.
+      // A better approach is to draw on a separate canvas or update path data directly.
+      setPreviewElement({
+        id: 'preview-stroke',
+        type: 'stroke',
+        points: [...currentPointsRef.current],
+        strokeColor: color,
+        strokeWidth,
+      } as any);
+    } else if (tool === 'rectangle' || tool === 'ellipse' || tool === 'line' || tool === 'arrow') {
+      setPreviewElement({
+        id: 'preview',
+        type: tool,
+        x: Math.min(startPointRef.current.x, point.x),
+        y: Math.min(startPointRef.current.y, point.y),
+        width: Math.abs(startPointRef.current.x - point.x),
+        height: Math.abs(startPointRef.current.y - point.y),
+        angle: 0,
+        strokeColor: color,
+        strokeWidth,
+        opacity: 1,
+        fillColor: 'transparent',
+        strokeStyle: 'solid',
+      } as any);
+    }
+  };
+  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    setAction('none');
+    const endPoint = getSvgPoint(e);
+    if (tool === 'pen' && currentPointsRef.current.length > 1) {
+      onCreateStroke(currentPointsRef.current, { color, strokeWidth });
+    } else if (tool === 'rectangle' || tool === 'ellipse' || tool === 'line' || tool === 'arrow') {
+      onCreateElement(tool, startPointRef.current, endPoint, { color, strokeWidth });
+    }
+    currentPointsRef.current = [];
+    setPreviewElement(null);
+  };
   return (
-    <svg ref={targetRef} className="w-full h-full bg-white dark:bg-gray-800 touch-none">
-      {drawing.elements.map(renderElement)}
+    <svg
+      ref={targetRef}
+      className="w-full h-full bg-card touch-none"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    >
+      {elements.map(renderElement)}
       {previewElement && renderElement(previewElement)}
-      {tool === 'pen' && currentPoints.length > 0 && (
-        <path
-          d={getPathData(currentPoints)}
-          stroke={color}
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      )}
+      {presences.map(p => p.cursor && (
+        <circle key={p.userId} cx={p.cursor.x} cy={p.cursor.y} r={4} fill="#f48018" className="pointer-events-none" />
+      ))}
     </svg>
   );
 }

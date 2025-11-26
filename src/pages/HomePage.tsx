@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useDebounce } from 'react-use';
+import { useDebounce, useInterval } from 'react-use';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Toaster, toast } from '@/components/ui/sonner';
@@ -9,20 +9,32 @@ import { LayersPanel } from '@/components/inspector/LayersPanel';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { useDraw } from '@/hooks/use-draw';
 import { api } from '@/lib/api-client';
-import type { Drawing, DrawingElement, Tool } from '@shared/types';
+import type { Drawing, Tool, Presence, Op } from '@shared/types';
 import { exportToSvg, exportToPng } from '@/lib/drawing';
 import { EmptyStateIllustration } from './EditorAssets';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
-const initialDrawing: Drawing = { id: '', title: 'Untitled', elements: [], updatedAt: 0 };
+const initialDrawing: Drawing = { id: '', title: 'Untitled', elements: [], updatedAt: 0, ops: [], opVersion: 0 };
 export function HomePage() {
   const [activeTool, setActiveTool] = useState<Tool>('pen');
   const [color, setColor] = useState('#f48018');
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [currentDrawingId, setCurrentDrawingId] = useState<string | null>(null);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
-  const { drawing, setDrawing, updateDrawing, undo, redo, canUndo, canRedo, createStroke } = useDraw(initialDrawing);
+  const [presences, setPresences] = useState<Presence[]>([]);
+  const { drawing, elements, setDrawing, undo, redo, canUndo, canRedo, createElement, createStroke, mergeRemoteOps, pendingOps } = useDraw(initialDrawing);
+  const loadDrawing = useCallback(async (id: string) => {
+    try {
+      const loaded = await api<Drawing>(`/api/drawings/${id}`);
+      setDrawing(loaded);
+      setCurrentDrawingId(id);
+      toast.success(`Loaded "${loaded.title}"`);
+    } catch (error) {
+      toast.error('Failed to load drawing.');
+      setCurrentDrawingId(null);
+    }
+  }, [setDrawing]);
   const loadDrawings = useCallback(async () => {
     try {
       const { items } = await api<{ items: Drawing[] }>('/api/drawings');
@@ -33,20 +45,10 @@ export function HomePage() {
     } catch (error) {
       toast.error('Failed to load drawings.');
     }
-  }, [currentDrawingId]);
+  }, [currentDrawingId, loadDrawing]);
   useEffect(() => {
     loadDrawings();
-  }, [loadDrawings]);
-  const loadDrawing = async (id: string) => {
-    try {
-      const loaded = await api<Drawing>(`/api/drawings/${id}`);
-      setDrawing(loaded);
-      setCurrentDrawingId(id);
-      toast.success(`Loaded "${loaded.title}"`);
-    } catch (error) {
-      toast.error('Failed to load drawing.');
-    }
-  };
+  }, []); // Run only once on mount
   const createNewDrawing = async () => {
     try {
       const newDrawing = await api<Drawing>('/api/drawings', { method: 'POST', body: JSON.stringify({ title: 'New Drawing' }) });
@@ -56,32 +58,46 @@ export function HomePage() {
       toast.error('Failed to create new drawing.');
     }
   };
-  const handleSave = useCallback(async () => {
-    if (!currentDrawingId) return;
+  const handleSave = useCallback(async (ops: Op[]) => {
+    if (!currentDrawingId || ops.length === 0) return;
     try {
-      await api(`/api/drawings/${currentDrawingId}/patch`, {
+      await api(`/api/drawings/${currentDrawingId}/ops`, {
         method: 'POST',
-        body: JSON.stringify({ elements: drawing.elements, title: drawing.title }),
+        body: JSON.stringify(ops),
       });
-      toast.success('Drawing saved!');
+      // Update local drawing version to match server
+      setDrawing({ ...drawing, opVersion: drawing.opVersion + ops.length });
     } catch (error) {
-      toast.error('Failed to save drawing.');
+      toast.error('Failed to save changes.');
     }
-  }, [currentDrawingId, drawing]);
-  useDebounce(handleSave, 2000, [drawing.elements]);
-  const handleCreateElement = (element: DrawingElement) => {
-    updateDrawing(draft => {
-      if (element.type === 'stroke') {
-        const stroke = createStroke(element.points, { color, strokeWidth });
-        draft.elements.push(stroke);
-      } else {
-        element.id = crypto.randomUUID();
-        draft.elements.push(element);
+  }, [currentDrawingId, drawing, setDrawing]);
+  useDebounce(() => {
+    handleSave(pendingOps);
+  }, 2000, [pendingOps, handleSave]);
+  useInterval(() => {
+    if (!currentDrawingId) return;
+    const poll = async () => {
+      try {
+        const remoteOps = await api<Op[]>(`/api/drawings/${currentDrawingId}/ops?since=${drawing.opVersion}`);
+        if (remoteOps.length > 0) {
+          const { conflicts } = mergeRemoteOps(remoteOps);
+          setDrawing({ ...drawing, opVersion: drawing.opVersion + remoteOps.length });
+          if (conflicts > 0) {
+            toast.warning('Remote changes detected and merged!');
+          } else {
+            toast.info('Drawing updated with changes from others.');
+          }
+        }
+        const remotePresences = await api<Presence[]>(`/api/drawings/${currentDrawingId}/presence`);
+        setPresences(remotePresences);
+      } catch (error) {
+        console.error("Polling failed", error);
       }
-    });
-  };
+    };
+    poll();
+  }, 5000);
   const handleExport = async (format: 'svg' | 'png') => {
-    const svgString = exportToSvg(drawing);
+    const svgString = exportToSvg({ ...drawing, elements });
     const filename = `${drawing.title}.${format}`;
     if (format === 'svg') {
       const blob = new Blob([svgString], { type: 'image/svg+xml' });
@@ -144,30 +160,28 @@ export function HomePage() {
             onRedo={redo}
             canUndo={canUndo}
             canRedo={canRedo}
-            onSave={handleSave}
+            onSave={() => handleSave(pendingOps)}
             onExport={handleExport}
           />
           {currentDrawingId ? (
             <ResizablePanelGroup direction="horizontal" className="h-full">
               <ResizablePanel defaultSize={80}>
                 <ExcalidrawCanvas
-                  drawing={drawing}
+                  elements={elements}
                   tool={activeTool}
                   color={color}
                   strokeWidth={strokeWidth}
-                  onCreateElement={handleCreateElement}
-                  onUpdateElement={() => {}}
+                  onCreateElement={createElement}
+                  onCreateStroke={createStroke}
+                  presences={presences}
                 />
               </ResizablePanel>
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={20} minSize={15} maxSize={25}>
                 <LayersPanel
-                  elements={drawing.elements}
-                  onReorder={(reordered) => updateDrawing(draft => { draft.elements = reordered; })}
-                  onToggleVisibility={(id) => updateDrawing(draft => {
-                    const el = draft.elements.find(e => e.id === id);
-                    if (el) el.opacity = el.opacity === 0 ? 1 : 0;
-                  })}
+                  elements={elements}
+                  onReorder={(reordered) => { /* TODO: Implement reorder op */ }}
+                  onToggleVisibility={(id) => { /* TODO: Implement visibility op */ }}
                 />
               </ResizablePanel>
             </ResizablePanelGroup>
